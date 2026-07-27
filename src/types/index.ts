@@ -1,6 +1,8 @@
 export type Role = "SUPER_ADMIN" | "AREA_HEAD" | "KEPALA_UNIT";
 export type UserRole = Role;
 
+export type PerformanceStatus = "EXCELLENT" | "GOOD" | "WARNING" | "CRITICAL" | "HIJAU" | "KUNING" | "MERAH" | string;
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -35,6 +37,7 @@ export interface PerformanceMetric {
   npl_percentage: number;
   profit: number;
   last_update: string;
+  status?: PerformanceStatus;
 }
 
 export interface DailyReport {
