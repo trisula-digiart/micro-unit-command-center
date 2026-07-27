@@ -47,59 +47,41 @@ import {
   Shield
 } from "lucide-react";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const getSafeEnv = (key: string): string => {
+  try {
+    if (typeof process !== "undefined" && process && process.env) {
+      return process.env[key] || "";
+    }
+  } catch {
+    // Ignore ReferenceError in browser preview environments
+  }
+  return "";
+};
+
+const supabaseUrl = getSafeEnv("NEXT_PUBLIC_SUPABASE_URL");
+const supabaseAnonKey = getSafeEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
 const createInlineSupabaseClient = (url: string, key: string) => {
   if (!url || !key) return null;
   return {
     from: (table: string) => ({
-      select: (query: string = "*") => {
-        const fetchSelect = async () => {
-          try {
-            const res = await fetch(
-              `${url}/rest/v1/${table}?select=${encodeURIComponent(query)}`,
-              {
-                headers: {
-                  apikey: key,
-                  Authorization: `Bearer ${key}`,
-                },
-              }
-            );
-            if (!res.ok) return { data: null, error: await res.json() };
-            const data = await res.json();
-            return { data, error: null };
-          } catch (err) {
-            return { data: null, error: err };
-          }
-        };
-
-        return {
-          order: (column: string, { ascending }: { ascending: boolean }) => {
-            const queryFn = async () => {
-              try {
-                const res = await fetch(
-                  `${url}/rest/v1/${table}?select=${encodeURIComponent(
-                    query
-                  )}&order=${column}.${ascending ? "asc" : "desc"}`,
-                  {
-                    headers: {
-                      apikey: key,
-                      Authorization: `Bearer ${key}`,
-                    },
-                  }
-                );
-                if (!res.ok) return { data: null, error: await res.json() };
-                const data = await res.json();
-                return { data, error: null };
-              } catch (err) {
-                return { data: null, error: err };
-              }
-            };
-            return Promise.resolve(queryFn());
-          },
-          then: (onfulfilled: any) => fetchSelect().then(onfulfilled),
-        };
+      select: async (query: string = "*") => {
+        try {
+          const res = await fetch(
+            `${url}/rest/v1/${table}?select=${encodeURIComponent(query)}`,
+            {
+              headers: {
+                apikey: key,
+                Authorization: `Bearer ${key}`,
+              },
+            }
+          );
+          if (!res.ok) return { data: null, error: await res.json() };
+          const data = await res.json();
+          return { data, error: null };
+        } catch (err) {
+          return { data: null, error: err };
+        }
       },
       upsert: async (payload: any[]) => {
         try {
@@ -191,7 +173,7 @@ export interface BroadcastMessage {
   content: string;
   date: string;
   sender: string;
-  readBy: string[]; // List of unit codes
+  readBy: string[];
 }
 
 export interface SystemNotification {
@@ -318,7 +300,7 @@ const INITIAL_NOTIFICATIONS: SystemNotification[] = [
 export default function CommandCenter() {
   // Authentication & RBAC Scope State
   const [currentRole, setCurrentRole] = useState<Role>("AREA_HEAD");
-  const [activeUnitScope, setActiveUnitScope] = useState<string>("KMU-01"); // Selected Scope if KEPALA_UNIT
+  const [activeUnitScope, setActiveUnitScope] = useState<string>("KMU-01");
   const [activeMenu, setActiveMenu] = useState<string>("Dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
 
@@ -327,7 +309,7 @@ export default function CommandCenter() {
   const [metrics, setMetrics] = useState<PerformanceMetric[]>(INITIAL_METRICS);
   const [reports, setReports] = useState<DailyReport[]>(INITIAL_REPORTS);
   const [broadcasts, setBroadcasts] = useState<BroadcastMessage[]>(INITIAL_BROADCASTS);
-  const [notifications, setNotifications] = useState<SystemNotification[]>(INITIAL_NOTIFICATIONS);
+  const [notifications] = useState<SystemNotification[]>(INITIAL_NOTIFICATIONS);
 
   // Connection & Filtering States
   const [isConnectedLive, setIsConnectedLive] = useState<boolean>(false);
@@ -338,26 +320,22 @@ export default function CommandCenter() {
   // Form Modals States
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState<boolean>(false);
   const [newBroadcastTitle, setNewBroadcastTitle] = useState<string>("");
-  const [newBroadcastContent, setNewBroadcastContent] = useState<string>("");
+  const [newBroadcastContent, setNewBroadcastContent] = useState<string>(" ");
 
   const [newReportType, setNewReportType] = useState<"HARIAN" | "MINGGUAN" | "BULANAN">("HARIAN");
   const [newReportSummary, setNewReportSummary] = useState<string>("");
   const [newReportObstacles, setNewReportObstacles] = useState<string>("");
 
-  const [selectedReportForAction, setSelectedReportForNote] = useState<DailyReport | null>(null);
   const [areaHeadNoteInput, setAreaHeadNoteInput] = useState<string>("");
-
   const [editingMetric, setEditingMetric] = useState<PerformanceMetric | null>(null);
 
   const fetchLiveData = async () => {
     if (!supabase) return;
     setIsLoading(true);
     try {
-      const metricsReq = supabase.from("performance_metrics").select(`*, units:unit_id (name, code)`);
-      const { data: metricsData, error: metricsError } = await (metricsReq as unknown as Promise<any>);
-
-      if (!metricsError && metricsData && metricsData.length > 0) {
-        const formattedMetrics: PerformanceMetric[] = metricsData.map((m: any) => ({
+      const res = await supabase.from("performance_metrics").select(`*, units:unit_id (name, code)`);
+      if (res && res.data && res.data.length > 0) {
+        const formattedMetrics: PerformanceMetric[] = res.data.map((m: any) => ({
           id: m.id,
           unit_id: m.unit_id,
           unit_name: m.units?.name || "Unit Unknown",
@@ -429,7 +407,6 @@ export default function CommandCenter() {
   const top5Units = sortedByPerformance.slice(0, 5);
   const bottom5Units = sortedByPerformance.slice(-5).reverse();
 
-  // Dynamic Navigation Items per Role
   const menuItems = useMemo(() => {
     if (currentRole === "AREA_HEAD" || currentRole === "SUPER_ADMIN") {
       return [
@@ -442,7 +419,6 @@ export default function CommandCenter() {
         { name: "Profil", icon: User },
       ];
     } else {
-      // KEPALA_UNIT Role Menu
       return [
         { name: "Dashboard Unit", icon: LayoutDashboard },
         { name: "Data Unit", icon: Building },
@@ -472,7 +448,6 @@ export default function CommandCenter() {
     setNewBroadcastTitle("");
     setNewBroadcastContent("");
     setIsBroadcastModalOpen(false);
-    alert("Broadcast berhasil dikirim ke seluruh Kantor Unit!");
   };
 
   const handleMarkBroadcastRead = (id: string) => {
@@ -505,12 +480,10 @@ export default function CommandCenter() {
     setReports([newRep, ...reports]);
     setNewReportSummary("");
     setNewReportObstacles("");
-    alert("Laporan berhasil dikirimkan ke Head Area untuk ditinjau!");
   };
 
   const handleApproveReport = (id: string, status: "APPROVED" | "REVISION") => {
     setReports(prev => prev.map(r => r.id === id ? { ...r, status, area_head_notes: areaHeadNoteInput || r.area_head_notes } : r));
-    setSelectedReportForNote(null);
     setAreaHeadNoteInput("");
   };
 
@@ -520,15 +493,12 @@ export default function CommandCenter() {
 
     setMetrics(prev => prev.map(m => m.id === editingMetric.id ? editingMetric : m));
     setEditingMetric(null);
-    alert("Target & Realisasi unit berhasil diperbarui!");
   };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col md:flex-row selection:bg-slate-900 selection:text-emerald-400">
       
-      {/* ========================================================== */}
-      {/* SIDEBAR NAVIGATION (DYNAMIC BASED ON ROLE)                 */}
-      {/* ========================================================== */}
+      {/* SIDEBAR NAVIGATION (DYNAMIC ACCORDING TO ROLE) */}
       <aside
         className={`bg-[#0F172A] text-slate-300 w-full md:w-64 flex-shrink-0 transition-all duration-300 z-50 ${
           isSidebarOpen ? "block" : "hidden md:block"
@@ -641,20 +611,11 @@ export default function CommandCenter() {
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => alert("Logout berhasil disimulasikan.")}
-              className="text-slate-400 hover:text-rose-400 p-1.5 rounded-lg transition-colors cursor-pointer"
-              title="Logout"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
           </div>
         </div>
       </aside>
 
-      {/* ========================================================== */}
-      {/* MAIN CONTENT AREA                                          */}
-      {/* ========================================================== */}
+      {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0">
         
         {/* HEADER BAR */}
@@ -705,13 +666,10 @@ export default function CommandCenter() {
         {/* MAIN BODY DYNAMIC VIEWS */}
         <main className="p-4 sm:p-8 space-y-8 max-w-7xl w-full mx-auto">
           
-          {/* ========================================================= */}
-          {/* VIEW: EXECUTIVE DASHBOARD (HEAD AREA / SUPER ADMIN)        */}
-          {/* ========================================================= */}
+          {/* VIEW: EXECUTIVE DASHBOARD */}
           {(activeMenu === "Dashboard" || activeMenu === "Dashboard Unit") && (
             <div className="space-y-8">
               {currentRole === "KEPALA_UNIT" ? (
-                /* DASHBOARD SPECIFIC TO KEPALA UNIT (SCOPED ACCESS) */
                 <div className="space-y-6">
                   <div className="bg-gradient-to-r from-[#0F172A] to-slate-800 text-white p-6 rounded-2xl border border-slate-800 shadow-sm relative overflow-hidden">
                     <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 relative z-10">
@@ -733,7 +691,6 @@ export default function CommandCenter() {
                     </div>
                   </div>
 
-                  {/* SCOPED KPI CARDS */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                       <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Target vs Realisasi Kredit</span>
@@ -760,9 +717,7 @@ export default function CommandCenter() {
                   </div>
                 </div>
               ) : (
-                /* DASHBOARD EXECUTIVE HEAD AREA (AGREGAT 17 UNIT) */
                 <div className="space-y-6">
-                  {/* HIGH-LEVEL SUMMARY MACRO CARDS */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
                       <div className="flex items-center justify-between">
@@ -851,9 +806,8 @@ export default function CommandCenter() {
                     </div>
                   </div>
 
-                  {/* RANKING PERFORMA UNIT: TOP 5 & BOTTOM 5 */}
+                  {/* RANKING PERFORMA UNIT */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* TOP 5 UNITS */}
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div className="flex items-center gap-2">
@@ -888,7 +842,6 @@ export default function CommandCenter() {
                       </div>
                     </div>
 
-                    {/* BOTTOM 5 UNITS */}
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div className="flex items-center gap-2">
@@ -928,9 +881,7 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {/* ========================================================= */}
-          {/* VIEW: MONITORING SELURUH UNIT (17 BRANCHES MATRIX)        */}
-          {/* ========================================================= */}
+          {/* VIEW: MONITORING SELURUH UNIT */}
           {(activeMenu === "Monitoring Unit" || activeMenu === "Monitoring Target") && (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-4">
               <div className="p-5 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
@@ -1036,9 +987,7 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {/* ========================================================= */}
-          {/* VIEW: APPROVAL & VALIDASI (HEAD AREA)                    */}
-          {/* ========================================================= */}
+          {/* VIEW: APPROVAL */}
           {activeMenu === "Approval" && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
@@ -1097,9 +1046,7 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {/* ========================================================= */}
-          {/* VIEW: BROADCAST & MESSAGING                              */}
-          {/* ========================================================= */}
+          {/* VIEW: BROADCAST */}
           {(activeMenu === "Broadcast" || activeMenu === "Pesan dari Head") && (
             <div className="space-y-6">
               <div className="flex justify-between items-center bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -1151,9 +1098,7 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {/* ========================================================= */}
-          {/* VIEW: INPUT LAPORAN (KEPALA UNIT)                        */}
-          {/* ========================================================= */}
+          {/* VIEW: INPUT LAPORAN */}
           {activeMenu === "Input Laporan" && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-2xl mx-auto space-y-5">
               <div className="border-b border-slate-100 pb-3">
@@ -1208,9 +1153,7 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {/* ========================================================= */}
-          {/* VIEW: NOTIFIKASI SYSTEM                                  */}
-          {/* ========================================================= */}
+          {/* VIEW: NOTIFIKASI */}
           {(activeMenu === "Notifikasi" || activeMenu === "Notifikasi Unit") && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
               <h3 className="font-bold text-slate-900 text-base border-b border-slate-100 pb-3">Pusat Notifikasi Sistem</h3>
@@ -1229,9 +1172,7 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {/* ========================================================= */}
-          {/* VIEW: PROFIL & SETTINGS                                  */}
-          {/* ========================================================= */}
+          {/* VIEW: PROFIL */}
           {(activeMenu === "Profil" || activeMenu === "Profil Unit") && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-xl mx-auto space-y-6">
               <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
@@ -1248,7 +1189,7 @@ export default function CommandCenter() {
                 </div>
               </div>
 
-              <form onSubmit={(e) => { e.preventDefault(); alert("Password berhasil diperbarui!"); }} className="space-y-4 text-xs">
+              <form onSubmit={(e) => e.preventDefault()} className="space-y-4 text-xs">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Kata Sandi Lama</label>
                   <input type="password" required className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 outline-none" />
@@ -1267,9 +1208,7 @@ export default function CommandCenter() {
         </main>
       </div>
 
-      {/* ========================================================= */}
-      {/* MODAL: DETAIL UNIT (PER CABANG)                          */}
-      {/* ========================================================= */}
+      {/* MODAL: DETAIL UNIT */}
       {selectedUnitDetail && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5 border border-slate-200">
@@ -1312,7 +1251,7 @@ export default function CommandCenter() {
         </div>
       )}
 
-      {/* MODAL: BROADCAST FORM (HEAD AREA) */}
+      {/* MODAL: BROADCAST FORM */}
       {isBroadcastModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200">
@@ -1354,7 +1293,7 @@ export default function CommandCenter() {
         </div>
       )}
 
-      {/* MODAL EDIT METRIC (HEAD AREA) */}
+      {/* MODAL EDIT METRIC */}
       {editingMetric && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200">
