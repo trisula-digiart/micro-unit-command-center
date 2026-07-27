@@ -51,22 +51,25 @@ import {
   HelpCircle
 } from "lucide-react";
 
-/* STREAMING_CHUNK:Configuring safe environment variable getter... */
-const getSafeEnv = (key: string): string => {
+const getSupabaseUrl = (): string => {
   try {
-    if (typeof process !== "undefined" && process && process.env) {
-      return process.env[key] || "";
-    }
+    return process.env.NEXT_PUBLIC_SUPABASE_URL || "";
   } catch {
-    // Safely fallback in non-Node environments
+    return "";
   }
-  return "";
 };
 
-const supabaseUrl = getSafeEnv("NEXT_PUBLIC_SUPABASE_URL");
-const supabaseAnonKey = getSafeEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+const getSupabaseAnonKey = (): string => {
+  try {
+    return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+  } catch {
+    return "";
+  }
+};
 
-/* STREAMING_CHUNK:Creating inline REST API Supabase client... */
+const supabaseUrl = getSupabaseUrl();
+const supabaseAnonKey = getSupabaseAnonKey();
+
 const createInlineSupabaseClient = (url: string, key: string) => {
   if (!url || !key) return null;
   return {
@@ -130,7 +133,6 @@ const createInlineSupabaseClient = (url: string, key: string) => {
 
 const supabase = createInlineSupabaseClient(supabaseUrl, supabaseAnonKey);
 
-/* STREAMING_CHUNK:Defining core TypeScript interfaces... */
 export type Role = "SUPER_ADMIN" | "AREA_HEAD" | "KEPALA_UNIT";
 
 export interface UserSession {
@@ -200,7 +202,6 @@ export interface SystemNotification {
   isRead: boolean;
 }
 
-/* STREAMING_CHUNK:Initializing fallback mock data for 17 units... */
 const INITIAL_UNITS: UnitDetail[] = Array.from({ length: 17 }, (_, i) => {
   const code = `KMU-${(i + 1).toString().padStart(2, "0")}`;
   const names = [
@@ -313,30 +314,34 @@ const INITIAL_NOTIFICATIONS: SystemNotification[] = [
   }
 ];
 
-/* STREAMING_CHUNK:Declaring main Command Center component and state handlers... */
 export default function CommandCenter() {
+  // Authentication & Login Portal Gate State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentRole, setCurrentRole] = useState<Role>("AREA_HEAD");
   const [activeUnitScope, setActiveUnitScope] = useState<string>("KMU-01");
   const [activeMenu, setActiveMenu] = useState<string>("Dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
 
+  // Login Form States
   const [loginEmail, setLoginEmail] = useState<string>("");
   const [loginPassword, setLoginPassword] = useState<string>("");
   const [loginError, setLoginError] = useState<string>("");
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
 
+  // Master Data States
   const [units] = useState<UnitDetail[]>(INITIAL_UNITS);
   const [metrics, setMetrics] = useState<PerformanceMetric[]>(INITIAL_METRICS);
   const [reports, setReports] = useState<DailyReport[]>(INITIAL_REPORTS);
   const [broadcasts, setBroadcasts] = useState<BroadcastMessage[]>(INITIAL_BROADCASTS);
   const [notifications] = useState<SystemNotification[]>(INITIAL_NOTIFICATIONS);
 
+  // Connection & Filtering States
   const [isConnectedLive, setIsConnectedLive] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedUnitDetail, setSelectedUnitDetail] = useState<UnitDetail | null>(null);
 
+  // Form Modals States
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState<boolean>(false);
   const [newBroadcastTitle, setNewBroadcastTitle] = useState<string>("");
   const [newBroadcastContent, setNewBroadcastContent] = useState<string>("");
@@ -348,7 +353,6 @@ export default function CommandCenter() {
   const [areaHeadNoteInput, setAreaHeadNoteInput] = useState<string>("");
   const [editingMetric, setEditingMetric] = useState<PerformanceMetric | null>(null);
 
-  /* STREAMING_CHUNK:Implementing bulletproof two-step live Supabase data fetcher... */
   const fetchLiveData = async () => {
     if (!supabase) {
       setIsConnectedLive(false);
@@ -410,6 +414,7 @@ export default function CommandCenter() {
   const getAchievement = (realization: number, target: number) =>
     target > 0 ? (realization / target) * 100 : 0;
 
+  // Active Scoped Data Computation
   const scopedMetrics = useMemo(() => {
     if (currentRole === "KEPALA_UNIT") {
       return metrics.filter((m) => m.unit_code === activeUnitScope);
@@ -421,6 +426,7 @@ export default function CommandCenter() {
     return units.find((u) => u.code === activeUnitScope) || units[0];
   }, [units, activeUnitScope]);
 
+  // Executive Regional Calculations
   const totalTargetKredit = metrics.reduce((acc, m) => acc + m.target_kredit, 0);
   const totalRealisasiKredit = metrics.reduce((acc, m) => acc + m.realisasi_kredit, 0);
   const regionalKreditAchievement = getAchievement(totalRealisasiKredit, totalTargetKredit);
@@ -431,6 +437,7 @@ export default function CommandCenter() {
   const avgNPL = metrics.length > 0 ? metrics.reduce((acc, m) => acc + m.npl_percentage, 0) / metrics.length : 0;
   const targetAchievedCount = metrics.filter((m) => getAchievement(m.realisasi_kredit, m.target_kredit) >= 100).length;
 
+  // Top 5 & Bottom 5 Rankings
   const sortedByPerformance = useMemo(() => {
     return [...metrics].sort((a, b) => getAchievement(b.realisasi_kredit, b.target_kredit) - getAchievement(a.realisasi_kredit, a.target_kredit));
   }, [metrics]);
@@ -462,7 +469,6 @@ export default function CommandCenter() {
     }
   }, [currentRole, reports, notifications, broadcasts, activeUnitScope]);
 
-  /* STREAMING_CHUNK:Handling login and authentication actions... */
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsAuthenticating(true);
@@ -560,14 +566,17 @@ export default function CommandCenter() {
     setEditingMetric(null);
   };
 
-  /* STREAMING_CHUNK:Rendering login screen portal gate... */
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#0F172A] text-slate-100 font-sans flex flex-col justify-center items-center p-4 relative overflow-hidden selection:bg-emerald-500 selection:text-slate-900">
+        
+        {/* BACKGROUND GLOW DECORATIONS */}
         <div className="absolute -top-32 -left-32 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="w-full max-w-md space-y-6 relative z-10">
+          
+          {/* HEADER LOGO */}
           <div className="text-center space-y-2">
             <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl flex items-center justify-center mx-auto shadow-2xl shadow-emerald-950 border border-emerald-400/30">
               <Building2 className="w-9 h-9 text-white" />
@@ -580,6 +589,7 @@ export default function CommandCenter() {
             </p>
           </div>
 
+          {/* MAIN LOGIN CARD */}
           <div className="bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
             <div className="border-b border-slate-800 pb-4">
               <h2 className="text-base font-extrabold text-white flex items-center gap-2">
@@ -591,6 +601,8 @@ export default function CommandCenter() {
             </div>
 
             <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs">
+              
+              {/* ROLE ACCESS SELECTOR */}
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1">
                   <Shield className="w-3 h-3 text-emerald-400" /> Tipe Hak Akses (Role):
@@ -606,6 +618,7 @@ export default function CommandCenter() {
                 </select>
               </div>
 
+              {/* BRANCH SCOPE SELECTOR FOR KEPALA UNIT */}
               {currentRole === "KEPALA_UNIT" && (
                 <div className="p-3 bg-amber-950/30 border border-amber-500/30 rounded-xl space-y-1">
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-amber-400">
@@ -625,6 +638,7 @@ export default function CommandCenter() {
                 </div>
               )}
 
+              {/* EMAIL / NIK INPUT */}
               <div>
                 <label className="block font-bold text-slate-300 mb-1">Email / ID Pengguna</label>
                 <div className="relative">
@@ -640,6 +654,7 @@ export default function CommandCenter() {
                 </div>
               </div>
 
+              {/* PASSWORD INPUT */}
               <div>
                 <label className="block font-bold text-slate-300 mb-1">Kata Sandi</label>
                 <div className="relative">
@@ -655,6 +670,7 @@ export default function CommandCenter() {
                 </div>
               </div>
 
+              {/* SUBMIT BUTTON */}
               <button
                 type="submit"
                 disabled={isAuthenticating}
@@ -670,6 +686,7 @@ export default function CommandCenter() {
               </button>
             </form>
 
+            {/* QUICK PRESET BUTTONS FOR FAST TESTING */}
             <div className="pt-4 border-t border-slate-800 space-y-2">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block text-center">
                 Atau Klik Akses Demo Cepat:
@@ -706,10 +723,10 @@ export default function CommandCenter() {
     );
   }
 
-  /* STREAMING_CHUNK:Rendering main application dashboard with sidebar navigation... */
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col md:flex-row selection:bg-slate-900 selection:text-emerald-400">
       
+      {/* SIDEBAR NAVIGATION (DYNAMIC ACCORDING TO ROLE) */}
       <aside
         className={`bg-[#0F172A] text-slate-300 w-full md:w-64 flex-shrink-0 transition-all duration-300 z-50 ${
           isSidebarOpen ? "block" : "hidden md:block"
@@ -735,6 +752,7 @@ export default function CommandCenter() {
           </button>
         </div>
 
+        {/* ROLE SIMULATION SELECTOR */}
         <div className="p-4 bg-slate-900/80 border-b border-slate-800 space-y-2">
           <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
             <Shield className="w-3 h-3 text-emerald-400" /> Mode Akses User:
@@ -773,6 +791,7 @@ export default function CommandCenter() {
           )}
         </div>
 
+        {/* SIDEBAR MENU LIST */}
         <nav className="p-3 space-y-1">
           <p className="px-3 text-[10px] font-bold text-slate-500 tracking-wider uppercase mb-2">
             Menu Utama ({currentRole.replace("_", " ")})
@@ -804,6 +823,7 @@ export default function CommandCenter() {
           })}
         </nav>
 
+        {/* USER PROFILE & LOGOUT FOOTER */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/50 mt-auto space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2.5">
@@ -831,9 +851,10 @@ export default function CommandCenter() {
         </div>
       </aside>
 
+      {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0">
         
-        {/* STREAMING_CHUNK:Rendering header bar and status indicators... */}
+        {/* HEADER BAR */}
         <header className="bg-white border-b border-slate-200 px-4 sm:px-8 h-16 flex items-center justify-between sticky top-0 z-40 shadow-sm">
           <div className="flex items-center gap-3">
             <button
@@ -878,9 +899,10 @@ export default function CommandCenter() {
           </div>
         </header>
 
-        {/* STREAMING_CHUNK:Rendering dynamic main views based on active menu... */}
+        {/* MAIN BODY DYNAMIC VIEWS */}
         <main className="p-4 sm:p-8 space-y-8 max-w-7xl w-full mx-auto">
           
+          {/* VIEW: EXECUTIVE DASHBOARD */}
           {(activeMenu === "Dashboard" || activeMenu === "Dashboard Unit") && (
             <div className="space-y-8">
               {currentRole === "KEPALA_UNIT" ? (
@@ -1020,7 +1042,7 @@ export default function CommandCenter() {
                     </div>
                   </div>
 
-                  {/* STREAMING_CHUNK:Rendering top 5 and bottom 5 unit performance tables... */}
+                  {/* RANKING PERFORMA UNIT */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -1095,7 +1117,7 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {/* STREAMING_CHUNK:Rendering unit monitoring matrix table... */}
+          {/* VIEW: MONITORING SELURUH UNIT */}
           {(activeMenu === "Monitoring Unit" || activeMenu === "Monitoring Target") && (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-4">
               <div className="p-5 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
@@ -1201,7 +1223,7 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {/* STREAMING_CHUNK:Rendering approval view for Area Head... */}
+          {/* VIEW: APPROVAL */}
           {activeMenu === "Approval" && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
@@ -1260,7 +1282,7 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {/* STREAMING_CHUNK:Rendering broadcast and announcement view... */}
+          {/* VIEW: BROADCAST */}
           {(activeMenu === "Broadcast" || activeMenu === "Pesan dari Head") && (
             <div className="space-y-6">
               <div className="flex justify-between items-center bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -1312,7 +1334,7 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {/* STREAMING_CHUNK:Rendering report submission form for units... */}
+          {/* VIEW: INPUT LAPORAN */}
           {activeMenu === "Input Laporan" && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-2xl mx-auto space-y-5">
               <div className="border-b border-slate-100 pb-3">
@@ -1367,7 +1389,7 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {/* STREAMING_CHUNK:Rendering system notifications view... */}
+          {/* VIEW: NOTIFIKASI */}
           {(activeMenu === "Notifikasi" || activeMenu === "Notifikasi Unit") && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
               <h3 className="font-bold text-slate-900 text-base border-b border-slate-100 pb-3">Pusat Notifikasi Sistem</h3>
@@ -1386,7 +1408,7 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {/* STREAMING_CHUNK:Rendering user profile settings view... */}
+          {/* VIEW: PROFIL */}
           {(activeMenu === "Profil" || activeMenu === "Profil Unit") && (
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-xl mx-auto space-y-6">
               <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
@@ -1422,7 +1444,7 @@ export default function CommandCenter() {
         </main>
       </div>
 
-      {/* STREAMING_CHUNK:Rendering modal dialogs for unit details, broadcasts, and editing... */}
+      {/* MODAL: DETAIL UNIT */}
       {selectedUnitDetail && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5 border border-slate-200">
@@ -1465,6 +1487,7 @@ export default function CommandCenter() {
         </div>
       )}
 
+      {/* MODAL: BROADCAST FORM */}
       {isBroadcastModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200">
@@ -1506,6 +1529,7 @@ export default function CommandCenter() {
         </div>
       )}
 
+      {/* MODAL EDIT METRIC */}
       {editingMetric && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200">
