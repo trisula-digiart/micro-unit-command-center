@@ -44,7 +44,11 @@ import {
   SlidersHorizontal,
   Mail,
   Filter,
-  Shield
+  Shield,
+  Key,
+  LogIn,
+  Sparkles,
+  HelpCircle
 } from "lucide-react";
 
 const getSafeEnv = (key: string): string => {
@@ -53,7 +57,7 @@ const getSafeEnv = (key: string): string => {
       return process.env[key] || "";
     }
   } catch {
-    // Ignore ReferenceError in browser preview environments
+    // Safely fallback in non-Node environments
   }
   return "";
 };
@@ -76,7 +80,7 @@ const createInlineSupabaseClient = (url: string, key: string) => {
               },
             }
           );
-          if (!res.ok) return { data: null, error: await res.json() };
+          if (!res.ok) return { data: null, error: await res.json().catch(() => ({ message: "HTTP Error" })) };
           const data = await res.json();
           return { data, error: null };
         } catch (err) {
@@ -125,6 +129,14 @@ const createInlineSupabaseClient = (url: string, key: string) => {
 const supabase = createInlineSupabaseClient(supabaseUrl, supabaseAnonKey);
 
 export type Role = "SUPER_ADMIN" | "AREA_HEAD" | "KEPALA_UNIT";
+
+export interface UserSession {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  unitCode: string;
+}
 
 export interface UnitDetail {
   id: string;
@@ -298,11 +310,18 @@ const INITIAL_NOTIFICATIONS: SystemNotification[] = [
 ];
 
 export default function CommandCenter() {
-  // Authentication & RBAC Scope State
+  // Authentication & Login Portal Gate State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentRole, setCurrentRole] = useState<Role>("AREA_HEAD");
   const [activeUnitScope, setActiveUnitScope] = useState<string>("KMU-01");
   const [activeMenu, setActiveMenu] = useState<string>("Dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+
+  // Login Form States
+  const [loginEmail, setLoginEmail] = useState<string>("");
+  const [loginPassword, setLoginPassword] = useState<string>("");
+  const [loginError, setLoginError] = useState<string>("");
+  const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
 
   // Master Data States
   const [units] = useState<UnitDetail[]>(INITIAL_UNITS);
@@ -320,7 +339,7 @@ export default function CommandCenter() {
   // Form Modals States
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState<boolean>(false);
   const [newBroadcastTitle, setNewBroadcastTitle] = useState<string>("");
-  const [newBroadcastContent, setNewBroadcastContent] = useState<string>(" ");
+  const [newBroadcastContent, setNewBroadcastContent] = useState<string>("");
 
   const [newReportType, setNewReportType] = useState<"HARIAN" | "MINGGUAN" | "BULANAN">("HARIAN");
   const [newReportSummary, setNewReportSummary] = useState<string>("");
@@ -330,7 +349,10 @@ export default function CommandCenter() {
   const [editingMetric, setEditingMetric] = useState<PerformanceMetric | null>(null);
 
   const fetchLiveData = async () => {
-    if (!supabase) return;
+    if (!supabase) {
+      setIsConnectedLive(false);
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await supabase.from("performance_metrics").select(`*, units:unit_id (name, code)`);
@@ -353,6 +375,8 @@ export default function CommandCenter() {
         }));
         setMetrics(formattedMetrics);
         setIsConnectedLive(true);
+      } else {
+        setIsConnectedLive(false);
       }
     } catch (err) {
       console.warn("Menggunakan Local Fallback State:", err);
@@ -431,6 +455,39 @@ export default function CommandCenter() {
     }
   }, [currentRole, reports, notifications, broadcasts, activeUnitScope]);
 
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAuthenticating(true);
+    setLoginError("");
+
+    setTimeout(() => {
+      setIsAuthenticating(false);
+      setIsAuthenticated(true);
+      setActiveMenu(currentRole === "KEPALA_UNIT" ? "Dashboard Unit" : "Dashboard");
+    }, 600);
+  };
+
+  const handleQuickLogin = (role: Role, unitCode: string = "KMU-01") => {
+    setCurrentRole(role);
+    setActiveUnitScope(unitCode);
+    setLoginEmail(
+      role === "AREA_HEAD"
+        ? "areahead@bank.co.id"
+        : role === "KEPALA_UNIT"
+        ? `kepala.${unitCode.toLowerCase()}@bank.co.id`
+        : "admin.it@bank.co.id"
+    );
+    setLoginPassword("••••••••");
+    setIsAuthenticated(true);
+    setActiveMenu(role === "KEPALA_UNIT" ? "Dashboard Unit" : "Dashboard");
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setLoginEmail("");
+    setLoginPassword("");
+  };
+
   const handleSendBroadcast = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBroadcastTitle.trim() || !newBroadcastContent.trim()) return;
@@ -494,6 +551,163 @@ export default function CommandCenter() {
     setMetrics(prev => prev.map(m => m.id === editingMetric.id ? editingMetric : m));
     setEditingMetric(null);
   };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#0F172A] text-slate-100 font-sans flex flex-col justify-center items-center p-4 relative overflow-hidden selection:bg-emerald-500 selection:text-slate-900">
+        
+        {/* BACKGROUND GLOW DECORATIONS */}
+        <div className="absolute -top-32 -left-32 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="w-full max-w-md space-y-6 relative z-10">
+          
+          {/* HEADER LOGO */}
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl flex items-center justify-center mx-auto shadow-2xl shadow-emerald-950 border border-emerald-400/30">
+              <Building2 className="w-9 h-9 text-white" />
+            </div>
+            <h1 className="text-2xl font-black tracking-wider uppercase text-white leading-tight">
+              MICRO-UNIT PORTAL
+            </h1>
+            <p className="text-xs text-slate-400 font-mono tracking-widest uppercase">
+              Command Center Perbankan Regional
+            </p>
+          </div>
+
+          {/* MAIN LOGIN CARD */}
+          <div className="bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
+            <div className="border-b border-slate-800 pb-4">
+              <h2 className="text-base font-extrabold text-white flex items-center gap-2">
+                <LogIn className="w-4 h-4 text-emerald-400" /> Masuk Ke Portal Resmi
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Gunakan kredensial resmi Head Area atau Kepala Unit
+              </p>
+            </div>
+
+            <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs">
+              
+              {/* ROLE ACCESS SELECTOR */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1">
+                  <Shield className="w-3 h-3 text-emerald-400" /> Tipe Hak Akses (Role):
+                </label>
+                <select
+                  value={currentRole}
+                  onChange={(e) => setCurrentRole(e.target.value as Role)}
+                  className="w-full bg-[#0F172A] text-white font-bold rounded-xl p-3 border border-slate-700 outline-none focus:border-emerald-500"
+                >
+                  <option value="AREA_HEAD">Head Area (Supervisor 17 Unit)</option>
+                  <option value="KEPALA_UNIT">Kepala Unit (Scoped Branch)</option>
+                  <option value="SUPER_ADMIN">Super Admin (IT Master)</option>
+                </select>
+              </div>
+
+              {/* BRANCH SCOPE SELECTOR FOR KEPALA UNIT */}
+              {currentRole === "KEPALA_UNIT" && (
+                <div className="p-3 bg-amber-950/30 border border-amber-500/30 rounded-xl space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                    Pilih Cabang Unit Anda:
+                  </label>
+                  <select
+                    value={activeUnitScope}
+                    onChange={(e) => setActiveUnitScope(e.target.value)}
+                    className="w-full bg-[#0F172A] text-amber-300 font-mono font-bold rounded-lg p-2 border border-amber-500/40 outline-none cursor-pointer"
+                  >
+                    {units.map((u) => (
+                      <option key={u.code} value={u.code}>
+                        {u.code} — {u.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* EMAIL / NIK INPUT */}
+              <div>
+                <label className="block font-bold text-slate-300 mb-1">Email / ID Pengguna</label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: headarea@bank.co.id"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 bg-[#0F172A] border border-slate-700 rounded-xl text-white font-medium outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* PASSWORD INPUT */}
+              <div>
+                <label className="block font-bold text-slate-300 mb-1">Kata Sandi</label>
+                <div className="relative">
+                  <Key className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 bg-[#0F172A] border border-slate-700 rounded-xl text-white font-medium outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* SUBMIT BUTTON */}
+              <button
+                type="submit"
+                disabled={isAuthenticating}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-3 rounded-xl transition-all shadow-lg shadow-emerald-950 flex items-center justify-center gap-2 cursor-pointer mt-2"
+              >
+                {isAuthenticating ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <LogIn className="w-4 h-4" /> Masuk Ke Dashboard
+                  </>
+                )}
+              </button>
+            </form>
+
+            {/* QUICK PRESET BUTTONS FOR FAST TESTING */}
+            <div className="pt-4 border-t border-slate-800 space-y-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block text-center">
+                Atau Klik Akses Demo Cepat:
+              </span>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin("AREA_HEAD")}
+                  className="p-2.5 bg-[#0F172A] hover:bg-slate-800 border border-slate-700 rounded-xl text-left transition-all text-slate-200 cursor-pointer"
+                >
+                  <span className="block text-[9px] font-bold text-emerald-400 uppercase">Head Area</span>
+                  Supervisor 17 Unit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin("KEPALA_UNIT", "KMU-01")}
+                  className="p-2.5 bg-[#0F172A] hover:bg-slate-800 border border-slate-700 rounded-xl text-left transition-all text-slate-200 cursor-pointer"
+                >
+                  <span className="block text-[9px] font-bold text-amber-400 uppercase">Kepala Unit</span>
+                  KMU-01 Sukamaju
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500 font-mono">
+            <Lock className="w-3.5 h-3.5 text-emerald-500" />
+            <span>Sistem Informasi Micro-Unit Banking v2.0</span>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col md:flex-row selection:bg-slate-900 selection:text-emerald-400">
@@ -595,8 +809,8 @@ export default function CommandCenter() {
           })}
         </nav>
 
-        {/* USER PROFILE FOOTER */}
-        <div className="p-4 border-t border-slate-800 bg-slate-950/50 mt-auto">
+        {/* USER PROFILE & LOGOUT FOOTER */}
+        <div className="p-4 border-t border-slate-800 bg-slate-950/50 mt-auto space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2.5">
               <div className="w-8 h-8 rounded-full bg-slate-800 text-emerald-400 flex items-center justify-center font-bold text-xs border border-slate-700">
@@ -612,6 +826,14 @@ export default function CommandCenter() {
               </div>
             </div>
           </div>
+
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 border border-rose-900/30 transition-all cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Keluar Sesi</span>
+          </button>
         </div>
       </aside>
 
@@ -1319,7 +1541,7 @@ export default function CommandCenter() {
                   />
                 </div>
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-[#0F172A] pt-2">
                 <button
                   type="button"
                   onClick={() => setEditingMetric(null)}
