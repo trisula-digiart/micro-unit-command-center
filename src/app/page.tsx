@@ -278,15 +278,17 @@ export default function CommandCenter() {
 
   const [editingMetric, setEditingMetric] = useState<PerformanceMetric | null>(null);
 
+// Fetch Live Data from Supabase
   const fetchLiveData = async () => {
     if (!supabase) return;
     setIsLoading(true);
     try {
-      const { data: metricsData, error: metricsError } = await supabase
-        .from("performance_metrics")
-        .select(`*, units:unit_id (name, code)`);
+      // FIX: Kita bungkus pemanggilan sebagai Promise eksplisit
+      const metricsRequest = supabase.from("performance_metrics").select(`*, units:unit_id (name, code)`);
+      const { data: metricsData, error: metricsError } = await (metricsRequest as unknown as Promise<any>);
 
       if (!metricsError && metricsData && metricsData.length > 0) {
+        // ... (sisanya tetap sama)
         const formattedMetrics: PerformanceMetric[] = metricsData.map((m: any) => ({
           id: m.id,
           unit_id: m.unit_id,
@@ -303,10 +305,9 @@ export default function CommandCenter() {
         setIsConnectedLive(true);
       }
 
-      const { data: reportsData, error: reportsError } = await supabase
-        .from("daily_reports")
-        .select(`*, units:unit_id (name), area_head_notes (notes)`)
-        .order("created_at", { ascending: false });
+      // FIX: Kita lakukan hal yang sama untuk daily_reports
+      const reportsRequest = supabase.from("daily_reports").select(`*, units:unit_id (name), area_head_notes (notes)`).order("created_at", { ascending: false });
+      const { data: reportsData, error: reportsError } = await (reportsRequest as unknown as Promise<any>);
 
       if (!reportsError && reportsData && reportsData.length > 0) {
         const formattedReports: DailyReport[] = reportsData.map((r: any) => ({
@@ -328,6 +329,8 @@ export default function CommandCenter() {
       setIsLoading(false);
     }
   };
+
+// ... (sisanya tetap sama sampai akhir file)
 
   useEffect(() => {
     fetchLiveData();
