@@ -1541,7 +1541,7 @@ export default function CommandCenter() {
                   />
                 </div>
               </div>
-              <div className="flex justify-end gap-[#0F172A] pt-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setEditingMetric(null)}
