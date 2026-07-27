@@ -61,27 +61,25 @@ if (role === 'SUPER_ADMIN') activeTabs = adminTabs;
 return (
 
 
-
 {activeTabs.map((tab) => {
 const Icon = tab.icon;
 const isActive = pathname === tab.href;
 
-        return (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
-              isActive
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-            }`}
-          >
-            <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-            <span>{tab.label}</span>
-          </Link>
-        );
-      })}
-    </div>
+      return (
+        <Link
+          key={tab.href}
+          href={tab.href}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+            isActive
+              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+          }`}
+        >
+          <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+          <span>{tab.label}</span>
+        </Link>
+      );
+    })}
   </div>
 </nav>
 
