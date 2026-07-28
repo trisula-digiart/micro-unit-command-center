@@ -7,7 +7,6 @@ import {
   ShieldAlert,
   CheckCircle2,
   AlertTriangle,
-  XCircle,
   FileText,
   MessageSquare,
   UserCheck,
@@ -50,118 +49,23 @@ import {
   Sparkles,
   HelpCircle,
   Calculator,
-  Percent
+  Percent,
+  FileSpreadsheet,
+  Trash2
 } from "lucide-react";
 
-const getSupabaseUrl = (): string => {
-  try {
-    return process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  } catch {
-    return "";
-  }
-};
-
-const getSupabaseAnonKey = (): string => {
-  try {
-    return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-  } catch {
-    return "";
-  }
-};
-
-const supabaseUrl = getSupabaseUrl();
-const supabaseAnonKey = getSupabaseAnonKey();
-
-const createInlineSupabaseClient = (url: string, key: string) => {
-  if (!url || !key) return null;
-  return {
-    from: (table: string) => ({
-      select: async (query: string = "*") => {
-        try {
-          const res = await fetch(
-            `${url}/rest/v1/${table}?select=${encodeURIComponent(query)}`,
-            {
-              headers: {
-                apikey: key,
-                Authorization: `Bearer ${key}`,
-              },
-            }
-          );
-          if (!res.ok) return { data: null, error: await res.json().catch(() => ({ message: "HTTP Error" })) };
-          const data = await res.json();
-          return { data, error: null };
-        } catch (err) {
-          return { data: null, error: err };
-        }
-      },
-      upsert: async (payload: any[]) => {
-        try {
-          const res = await fetch(`${url}/rest/v1/${table}`, {
-            method: "POST",
-            headers: {
-              apikey: key,
-              Authorization: `Bearer ${key}`,
-              "Content-Type": "application/json",
-              Prefer: "resolution=merge-duplicates",
-            },
-            body: JSON.stringify(payload),
-          });
-          const data = await res.json().catch(() => null);
-          return { data, error: res.ok ? null : data };
-        } catch (err) {
-          return { data: null, error: err };
-        }
-      },
-      insert: async (payload: any[]) => {
-        try {
-          const res = await fetch(`${url}/rest/v1/${table}`, {
-            method: "POST",
-            headers: {
-              apikey: key,
-              Authorization: `Bearer ${key}`,
-              "Content-Type": "application/json",
-              Prefer: "return=representation",
-            },
-            body: JSON.stringify(payload),
-          });
-          const data = await res.json().catch(() => null);
-          return { data, error: res.ok ? null : data };
-        } catch (err) {
-          return { data: null, error: err };
-        }
-      },
-      update: async (id: string, payload: any) => {
-        try {
-          const res = await fetch(`${url}/rest/v1/${table}?id=eq.${id}`, {
-            method: "PATCH",
-            headers: {
-              apikey: key,
-              Authorization: `Bearer ${key}`,
-              "Content-Type": "application/json",
-              Prefer: "return=representation",
-            },
-            body: JSON.stringify(payload),
-          });
-          const data = await res.json().catch(() => null);
-          return { data, error: res.ok ? null : data };
-        } catch (err) {
-          return { data: null, error: err };
-        }
-      },
-    }),
-  };
-};
-
-const supabase = createInlineSupabaseClient(supabaseUrl, supabaseAnonKey);
-
 export type Role = "SUPER_ADMIN" | "AREA_HEAD" | "KEPALA_UNIT";
+export type PerformanceStatus = "GREEN" | "YELLOW" | "RED" | "EXCELLENT" | "ON TARGET" | "WARNING" | "CRITICAL" | string;
+export type ReportStatus = "PENDING" | "APPROVED" | "REVISION" | "SUBMITTED" | "REVIEWED";
+export type NotificationType = "WARNING" | "INFO" | "SUCCESS";
 
-export interface UserSession {
+export interface UserProfile {
   id: string;
   name: string;
   email: string;
   role: Role;
-  unitCode: string;
+  unitCode?: string;
+  unit_id?: string;
 }
 
 export interface UnitDetail {
@@ -173,6 +77,7 @@ export interface UnitDetail {
   aoCount: number;
   staffCount: number;
   totalCustomers: number;
+  region?: string;
 }
 
 export interface PerformanceMetric {
@@ -188,22 +93,25 @@ export interface PerformanceMetric {
   target_collection: number;
   realisasi_collection: number;
   npl_percentage: number;
-  dkp_percentage: number; // Special Mention / Kol 2
+  dkp_percentage: number;
   profit: number;
   last_update: string;
+  updated_at?: string;
   submitted_today?: boolean;
+  status?: PerformanceStatus;
 }
 
 export interface DailyReport {
   id: string;
   unit_id: string;
+  user_id?: string;
   unit_name?: string;
   unit_code?: string;
-  report_type: "HARIAN" | "MINGGUAN" | "BULANAN";
+  report_type: "HARIAN" | "MINGGUAN" | "BULANAN" | string;
   report_date: string;
   operational_summary: string;
   obstacles: string;
-  status: "PENDING" | "APPROVED" | "REVISION";
+  status: ReportStatus;
   area_head_notes?: string;
 }
 
@@ -218,271 +126,760 @@ export interface BroadcastMessage {
 
 export interface SystemNotification {
   id: string;
+  unit_id?: string;
   title: string;
   message: string;
   timestamp: string;
-  type: "WARNING" | "INFO" | "SUCCESS";
+  type: NotificationType;
   isRead: boolean;
 }
 
-const INITIAL_UNITS: UnitDetail[] = Array.from({ length: 17 }, (_, i) => {
-  const code = `KMU-${(i + 1).toString().padStart(2, "0")}`;
-  const names = [
-    "Sukamaju", "Pasar Anyar", "Batu Tulis", "Cibinong", "Ciawi", 
-    "Parung", "Leuwiliang", "Cisarua", "Gunung Putri", "Citeureup",
-    "Jasinga", "Ciampea", "Ciseeng", "Klapanunggal", "Dramaga", "Rumpin", "Tanjungsari"
-  ];
-  const heads = [
-    "Ahmad Fauzi, S.E.", "Budi Hermawan", "Citra Lestari, M.M.", "Dedi Mulyadi",
-    "Eka Putri, S.E.", "Fajar Nugraha", "Gita Gutawa, M.B.A.", "Hendra Setiawan",
-    "Irfan Bachdim", "Joko Widodo", "Kurnia Meiga", "Lukman Sardi",
-    "Maya Ahmad", "Nabila Syakieb", "Oki Setiana", "Prabowo Subianto", "Qory Sandioriva"
-  ];
-  return {
-    id: `unit-uuid-${i + 1}`,
-    code,
-    name: `Kantor Mikro Unit ${names[i % names.length]}`,
-    location: `Wilayah Operasional ${names[i % names.length]}`,
-    headName: heads[i % heads.length],
-    aoCount: 3 + (i % 4),
-    staffCount: 5 + (i % 3),
-    totalCustomers: 450 + i * 85,
-  };
-});
+export interface EditableGridRow {
+  id: string;
+  unit_code: string;
+  unit_name: string;
+  target_kredit: number;
+  realisasi_kredit: number;
+  target_funding: number;
+  realisasi_funding: number;
+  realisasi_collection: number;
+  npl_percentage: number;
+  dkp_percentage: number;
+  ao_count: number;
+  total_customers: number;
+  last_update: string;
+  isModified?: boolean;
+}
 
-const INITIAL_METRICS: PerformanceMetric[] = INITIAL_UNITS.map((unit, index) => {
-  const targetKredit = 1200000000 + index * 100000000;
-  const multipliers = [1.08, 0.94, 0.76, 1.15, 0.89, 0.79, 1.02, 0.96, 0.68];
-  const mult = multipliers[index % multipliers.length];
-  const realisasiKredit = targetKredit * mult;
-
-  const targetFunding = 900000000 + index * 60000000;
-  const realisasiFunding = targetFunding * (mult > 0.9 ? 1.04 : 0.87);
-
-  const targetCollection = 95;
-  const realisasiCollection = Math.min(100, Math.max(75, Number((88 + (index % 5) * 3 - (index % 2) * 5).toFixed(1))));
-
-  return {
-    id: `metric-uuid-${index + 1}`,
-    unit_id: unit.id,
-    unit_name: unit.name,
-    unit_code: unit.code,
-    period_date: new Date().toISOString().split("T")[0],
-    target_kredit: targetKredit,
-    realisasi_kredit: realisasiKredit,
-    target_funding: targetFunding,
-    realisasi_funding: realisasiFunding,
-    target_collection: targetCollection,
-    realisasi_collection: realisasiCollection,
-    npl_percentage: Number((1.2 + (index % 5) * 0.75).toFixed(2)),
-    dkp_percentage: Number((2.1 + (index % 4) * 0.6).toFixed(2)),
-    profit: Number(((realisasiKredit * 0.08) - (targetKredit * 0.02)).toFixed(0)),
-    last_update: "Hari Ini, 08:30 WIB",
-    submitted_today: index % 3 !== 0
-  };
-});
-
-const INITIAL_REPORTS: DailyReport[] = [
-  {
-    id: "rep-1",
-    unit_id: INITIAL_UNITS[0].id,
-    unit_name: INITIAL_UNITS[0].name,
-    unit_code: INITIAL_UNITS[0].code,
-    report_type: "HARIAN",
-    report_date: new Date().toISOString().split("T")[0],
-    operational_summary: "Penyaluran Kredit Mikro sektor UMKM Pasar Anyar berjalan lancar. 5 berkas dicairkan total Rp 350.000.000.",
-    obstacles: "Dokumen jaminan nasabah A.N. Suhendar belum disahkan Notaris.",
-    status: "APPROVED",
-    area_head_notes: "Segera selesaikan legalitas jaminan minggu ini.",
-  },
-  {
-    id: "rep-2",
-    unit_id: INITIAL_UNITS[2].id,
-    unit_name: INITIAL_UNITS[2].name,
-    unit_code: INITIAL_UNITS[2].code,
-    report_type: "HARIAN",
-    report_date: new Date().toISOString().split("T")[0],
-    operational_summary: "Penagihan intensif debitur menunggak NPL H-3. Terkumpul angsuran Rp 45.000.000.",
-    obstacles: "Akses jalan menuju lokasi nasabah terkendala banjir lokal.",
-    status: "PENDING",
-    area_head_notes: "",
-  },
+const DEFAULT_UNITS: UnitDetail[] = [
+  { id: "u-1", code: "KMU-01", name: "Kantor Mikro Unit Sukamaju", location: "Sukamaju", headName: "Ahmad Fauzi, S.E.", aoCount: 4, staffCount: 6, totalCustomers: 520, region: "Regional 1" },
+  { id: "u-2", code: "KMU-02", name: "Kantor Mikro Unit Pasar Anyar", location: "Pasar Anyar", headName: "Budi Hermawan", aoCount: 5, staffCount: 7, totalCustomers: 610, region: "Regional 1" },
+  { id: "u-3", code: "KMU-03", name: "Kantor Mikro Unit Batu Tulis", location: "Batu Tulis", headName: "Citra Lestari, M.M.", aoCount: 3, staffCount: 5, totalCustomers: 480, region: "Regional 1" },
+  { id: "u-4", code: "KMU-04", name: "Kantor Mikro Unit Cibinong", location: "Cibinong", headName: "Dedi Mulyadi", aoCount: 6, staffCount: 8, totalCustomers: 750, region: "Regional 1" },
+  { id: "u-5", code: "KMU-05", name: "Kantor Mikro Unit Ciawi", location: "Ciawi", headName: "Eka Putri, S.E.", aoCount: 4, staffCount: 6, totalCustomers: 540, region: "Regional 1" },
+  { id: "u-6", code: "KMU-06", name: "Kantor Mikro Unit Parung", location: "Parung", headName: "Fajar Nugraha", aoCount: 4, staffCount: 5, totalCustomers: 490, region: "Regional 1" },
+  { id: "u-7", code: "KMU-07", name: "Kantor Mikro Unit Leuwiliang", location: "Leuwiliang", headName: "Gita Gutawa, M.B.A.", aoCount: 3, staffCount: 6, totalCustomers: 510, region: "Regional 1" },
+  { id: "u-8", code: "KMU-08", name: "Kantor Mikro Unit Cisarua", location: "Cisarua", headName: "Hendra Setiawan", aoCount: 4, staffCount: 6, totalCustomers: 530, region: "Regional 1" },
+  { id: "u-9", code: "KMU-09", name: "Kantor Mikro Unit Gunung Putri", location: "Gunung Putri", headName: "Irfan Bachdim", aoCount: 5, staffCount: 7, totalCustomers: 680, region: "Regional 1" },
+  { id: "u-10", code: "KMU-10", name: "Kantor Mikro Unit Citeureup", location: "Citeureup", headName: "Joko Widodo", aoCount: 4, staffCount: 6, totalCustomers: 560, region: "Regional 1" },
+  { id: "u-11", code: "KMU-11", name: "Kantor Mikro Unit Jasinga", location: "Jasinga", headName: "Kurnia Meiga", aoCount: 3, staffCount: 5, totalCustomers: 420, region: "Regional 1" },
+  { id: "u-12", code: "KMU-12", name: "Kantor Mikro Unit Ciampea", location: "Ciampea", headName: "Lukman Sardi", aoCount: 4, staffCount: 6, totalCustomers: 500, region: "Regional 1" },
+  { id: "u-13", code: "KMU-13", name: "Kantor Mikro Unit Ciseeng", location: "Ciseeng", headName: "Maya Ahmad", aoCount: 4, staffCount: 5, totalCustomers: 470, region: "Regional 1" },
+  { id: "u-14", code: "KMU-14", name: "Kantor Mikro Unit Klapanunggal", location: "Klapanunggal", headName: "Nabila Syakieb", aoCount: 4, staffCount: 6, totalCustomers: 550, region: "Regional 1" },
+  { id: "u-15", code: "KMU-15", name: "Kantor Mikro Unit Dramaga", location: "Dramaga", headName: "Oki Setiana", aoCount: 5, staffCount: 7, totalCustomers: 630, region: "Regional 1" },
+  { id: "u-16", code: "KMU-16", name: "Kantor Mikro Unit Rumpin", location: "Rumpin", headName: "Prabowo Subianto", aoCount: 3, staffCount: 5, totalCustomers: 410, region: "Regional 1" },
+  { id: "u-17", code: "KMU-17", name: "Kantor Mikro Unit Tanjungsari", location: "Tanjungsari", headName: "Qory Sandioriva", aoCount: 4, staffCount: 6, totalCustomers: 490, region: "Regional 1" },
 ];
 
-const INITIAL_BROADCASTS: BroadcastMessage[] = [
+const DEFAULT_METRICS: PerformanceMetric[] = DEFAULT_UNITS.map((unit, index) => {
+  const baseTarget = 1500000000 + (index % 5) * 250000000;
+  const baseRealisasi = baseTarget * (0.75 + ((index * 7) % 35) / 100);
+  const baseFundingTarget = 1000000000 + (index % 4) * 200000000;
+  const baseFundingReal = baseFundingTarget * (0.8 + ((index * 3) % 25) / 100);
+  const npl = Number((1.2 + ((index * 13) % 35) / 10).toFixed(2));
+  const dkp = Number((1.8 + ((index * 17) % 40) / 10).toFixed(2));
+
+  return {
+    id: `m-${unit.code}`,
+    unit_id: unit.id,
+    unit_code: unit.code,
+    unit_name: unit.name,
+    period_date: new Date().toISOString().split("T")[0],
+    target_kredit: baseTarget,
+    realisasi_kredit: Math.round(baseRealisasi),
+    target_funding: baseFundingTarget,
+    realisasi_funding: Math.round(baseFundingReal),
+    target_collection: 95.0,
+    realisasi_collection: 92.5 + (index % 5),
+    npl_percentage: npl,
+    dkp_percentage: dkp,
+    profit: Math.round(baseRealisasi * 0.06 - baseTarget * 0.01),
+    last_update: "Hari ini, 09:30 WIB",
+    submitted_today: index % 2 === 0,
+    status: npl > 3.0 ? "RED" : npl > 2.0 ? "YELLOW" : "GREEN"
+  };
+});
+
+const DEFAULT_REPORTS: DailyReport[] = [
   {
-    id: "bc-1",
-    title: "⚡ Evaluasi Pencapaian Target Akhir Bulan & Mitigasi NPL",
-    content: "Diimbau kepada seluruh Kepala Unit untuk mempercepat rekonsiliasi pencairan kredit mikro dan penagihan H-3 sebelum tanggal 28. Rapat koordinasi diadakan esok pukul 09.00 WIB.",
-    date: "27 Jul 2026 - 08:00 WIB",
-    sender: "Head Area Regional 1",
-    readBy: ["KMU-01", "KMU-02"]
+    id: "rep-01",
+    unit_id: "u-1",
+    unit_code: "KMU-01",
+    unit_name: "Kantor Mikro Unit Sukamaju",
+    report_type: "HARIAN",
+    report_date: new Date().toISOString().split("T")[0],
+    operational_summary: "Penagihan angsuran Kol 2 berhasil terealisasi Rp 45.000.000 dari 3 debitur pasar.",
+    obstacles: "Cuaca hujan deras sore hari sedikit menghambat kunker AO ke lokasi agunan.",
+    status: "PENDING"
+  },
+  {
+    id: "rep-02",
+    unit_id: "u-4",
+    unit_code: "KMU-04",
+    unit_name: "Kantor Mikro Unit Cibinong",
+    report_type: "HARIAN",
+    report_date: new Date().toISOString().split("T")[0],
+    operational_summary: "Pencairan kredit mikro sektor perdagangan sembako sebesar Rp 120.000.000 (2 berkas).",
+    obstacles: "Persyaratan kelengkapan SIUP pedagang pasar membutuhkan pendampingan.",
+    status: "APPROVED",
+    area_head_notes: "Bagus, pertahankan kecepatan verifikasi agunan."
   }
 ];
 
-const INITIAL_NOTIFICATIONS: SystemNotification[] = [
+const DEFAULT_BROADCASTS: BroadcastMessage[] = [
+  {
+    id: "bc-1",
+    title: "📢 INSTRUKSI PERCEPATAN PENAGIHAN AKHIR BULAN",
+    content: "Kepada seluruh Kepala Unit (KMU-01 s.d KMU-17), tingkatkan intensitas penagihan kredit Kol 2 (DKP) sebelum penutupan pembukuan. Target Collection Rate Area Regional min 95%.",
+    date: "28 Juli 2026",
+    sender: "Drs. Bambang Hermawan (Area Head)",
+    readBy: ["KMU-01", "KMU-04"]
+  }
+];
+
+const DEFAULT_NOTIFICATIONS: SystemNotification[] = [
   {
     id: "notif-1",
     title: "Peringatan NPL Tinggi",
-    message: "Unit KMU-03 (Batu Tulis) mencatatkan kenaikan NPL sebesar 4.20% (Melebihi batas aman 3.00%).",
+    message: "KMU-09 Gunung Putri mencatatkan NPL sebesar 4.20% (Melebihi ambang batas 3.00%).",
     timestamp: "10 menit yang lalu",
     type: "WARNING",
     isRead: false
   },
   {
     id: "notif-2",
-    title: "Target Tercapai",
-    message: "Selamat! Unit KMU-01 (Sukamaju) telah mencapai 108% Target Kredit bulan ini.",
-    timestamp: "1 jam yang lalu",
-    type: "SUCCESS",
+    title: "Pengajuan Worksheet Baru",
+    message: "KMU-01 Sukamaju telah memperbarui data pencairan kredit harian.",
+    timestamp: "25 menit yang lalu",
+    type: "INFO",
     isRead: false
   }
 ];
 
-export default function CommandCenter() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+interface WorksheetGridProps {
+  initialMetrics: PerformanceMetric[];
+  units: UnitDetail[];
+  activeUnitScope: string;
+  isHeadArea: boolean;
+  onSaveWorksheet: (updatedMetrics: PerformanceMetric[]) => Promise<void> | void;
+  isConnectedLive?: boolean;
+}
+
+function WorksheetGrid({
+  initialMetrics,
+  units,
+  activeUnitScope,
+  isHeadArea,
+  onSaveWorksheet,
+  isConnectedLive = false
+}: WorksheetGridProps) {
+  const [gridData, setGridRowData] = useState<EditableGridRow[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [searchFilter, setSearchFilter] = useState("");
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
+
+  useEffect(() => {
+    const formattedRows: EditableGridRow[] = initialMetrics.map((m) => {
+      const matchedUnit = units.find((u) => u.code === m.unit_code || u.id === m.unit_id);
+      return {
+        id: m.id || `grid-row-${Math.random()}`,
+        unit_code: m.unit_code || matchedUnit?.code || "KMU-00",
+        unit_name: m.unit_name || matchedUnit?.name || "Kantor Mikro Unit",
+        target_kredit: m.target_kredit || 0,
+        realisasi_kredit: m.realisasi_kredit || 0,
+        target_funding: m.target_funding || 0,
+        realisasi_funding: m.realisasi_funding || 0,
+        realisasi_collection: m.realisasi_collection || 95,
+        npl_percentage: m.npl_percentage || 0,
+        dkp_percentage: m.dkp_percentage || 0,
+        ao_count: matchedUnit?.aoCount || 4,
+        total_customers: matchedUnit?.totalCustomers || 500,
+        last_update: m.last_update || "Hari ini",
+        isModified: false
+      };
+    });
+    setGridRowData(formattedRows);
+  }, [initialMetrics, units]);
+
+  const handleCellChange = (
+    id: string,
+    field: keyof EditableGridRow,
+    value: string | number
+  ) => {
+    setGridRowData((prev) =>
+      prev.map((row) => {
+        if (row.id === id) {
+          const numValue = typeof value === "number" ? value : parseFloat(value) || 0;
+          return {
+            ...row,
+            [field]: typeof row[field] === "number" ? numValue : value,
+            isModified: true
+          };
+        }
+        return row;
+      })
+    );
+  };
+
+  const handleAddRow = () => {
+    const newIndex = gridData.length + 1;
+    const newCode = `KMU-${newIndex.toString().padStart(2, "0")}`;
+    const newRow: EditableGridRow = {
+      id: `new-row-${Date.now()}`,
+      unit_code: newCode,
+      unit_name: `Kantor Mikro Unit Baru ${newIndex}`,
+      target_kredit: 1000000000,
+      realisasi_kredit: 0,
+      target_funding: 800000000,
+      realisasi_funding: 0,
+      realisasi_collection: 95.0,
+      npl_percentage: 1.5,
+      dkp_percentage: 2.0,
+      ao_count: 4,
+      total_customers: 300,
+      last_update: "Baru ditambahkan",
+      isModified: true
+    };
+    setGridRowData([...gridData, newRow]);
+  };
+
+  const handleDeleteRow = (id: string) => {
+    if (window.confirm("Apakah Anda yakin ingin menghapus baris unit ini dari worksheet?")) {
+      setGridRowData((prev) => prev.filter((r) => r.id !== id));
+    }
+  };
+
+  const calculateAch = (realization: number, target: number) => {
+    if (!target || target === 0) return 0;
+    return (realization / target) * 100;
+  };
+
+  const getKpiBadge = (achKredit: number, npl: number) => {
+    if (achKredit >= 100 && npl <= 3.0) {
+      return { label: "EXCELLENT", bg: "bg-emerald-100 text-emerald-800 border-emerald-300" };
+    } else if (achKredit >= 80 && npl <= 4.5) {
+      return { label: "ON TARGET", bg: "bg-blue-100 text-blue-800 border-blue-300" };
+    } else if (achKredit >= 60 || npl <= 5.0) {
+      return { label: "WARNING", bg: "bg-amber-100 text-amber-800 border-amber-300" };
+    } else {
+      return { label: "CRITICAL", bg: "bg-rose-100 text-rose-800 border-rose-300" };
+    }
+  };
+
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
+      maximumFractionDigits: 0
+    }).format(val);
+
+  const displayedRows = useMemo(() => {
+    return gridData.filter((row) => {
+      const matchSearch =
+        row.unit_name.toLowerCase().includes(searchFilter.toLowerCase()) ||
+        row.unit_code.toLowerCase().includes(searchFilter.toLowerCase());
+
+      if (!isHeadArea) {
+        return matchSearch && row.unit_code === activeUnitScope;
+      }
+      return matchSearch;
+    });
+  }, [gridData, searchFilter, isHeadArea, activeUnitScope]);
+
+  const totals = useMemo(() => {
+    const sumTargetKredit = displayedRows.reduce((a, b) => a + b.target_kredit, 0);
+    const sumRealisasiKredit = displayedRows.reduce((a, b) => a + b.realisasi_kredit, 0);
+    const sumTargetFunding = displayedRows.reduce((a, b) => a + b.target_funding, 0);
+    const sumRealisasiFunding = displayedRows.reduce((a, b) => a + b.realisasi_funding, 0);
+    const avgNpl =
+      displayedRows.length > 0
+        ? displayedRows.reduce((a, b) => a + b.npl_percentage, 0) / displayedRows.length
+        : 0;
+    const avgDkp =
+      displayedRows.length > 0
+        ? displayedRows.reduce((a, b) => a + b.dkp_percentage, 0) / displayedRows.length
+        : 0;
+    const avgCollection =
+      displayedRows.length > 0
+        ? displayedRows.reduce((a, b) => a + b.realisasi_collection, 0) / displayedRows.length
+        : 0;
+
+    return {
+      sumTargetKredit,
+      sumRealisasiKredit,
+      achKredit: calculateAch(sumRealisasiKredit, sumTargetKredit),
+      sumTargetFunding,
+      sumRealisasiFunding,
+      achFunding: calculateAch(sumRealisasiFunding, sumTargetFunding),
+      avgNpl,
+      avgDkp,
+      avgCollection
+    };
+  }, [displayedRows]);
+
+  const handleBatchSave = async () => {
+    setIsSaving(true);
+    setSaveSuccessMsg("");
+
+    try {
+      const updatedMetrics: PerformanceMetric[] = gridData.map((row) => ({
+        id: row.id,
+        unit_id: row.id,
+        unit_code: row.unit_code,
+        unit_name: row.unit_name,
+        period_date: new Date().toISOString().split("T")[0],
+        target_kredit: row.target_kredit,
+        realisasi_kredit: row.realisasi_kredit,
+        target_funding: row.target_funding,
+        realisasi_funding: row.realisasi_funding,
+        target_collection: 95,
+        realisasi_collection: row.realisasi_collection,
+        npl_percentage: row.npl_percentage,
+        dkp_percentage: row.dkp_percentage,
+        profit: row.realisasi_kredit * 0.08 - row.target_kredit * 0.02,
+        last_update: "Baru saja disimpan",
+        submitted_today: true
+      }));
+
+      await onSaveWorksheet(updatedMetrics);
+
+      setGridRowData((prev) => prev.map((r) => ({ ...r, isModified: false })));
+      setSaveSuccessMsg("✓ Seluruh data worksheet berhasil disimpan dan disinkronkan!");
+      setTimeout(() => setSaveSuccessMsg(""), 4000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleExportCSV = () => {
+    const headers = [
+      "Kode Unit",
+      "Nama Unit",
+      "Target Kredit (Rp)",
+      "Realisasi Kredit (Rp)",
+      "% Ach Kredit",
+      "Target DPK (Rp)",
+      "Realisasi DPK (Rp)",
+      "% Ach DPK",
+      "Collection Rate (%)",
+      "NPL (%)",
+      "DKP / Kol 2 (%)",
+      "Jumlah AO",
+      "Total Debitur"
+    ];
+
+    const rows = displayedRows.map((r) => [
+      r.unit_code,
+      `"${r.unit_name}"`,
+      r.target_kredit,
+      r.realisasi_kredit,
+      calculateAch(r.realisasi_kredit, r.target_kredit).toFixed(2),
+      r.target_funding,
+      r.realisasi_funding,
+      calculateAch(r.realisasi_funding, r.target_funding).toFixed(2),
+      r.realisasi_collection,
+      r.npl_percentage,
+      r.dkp_percentage,
+      r.ao_count,
+      r.total_customers
+    ]);
+
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `Worksheet_Target_Mikro_${new Date().toISOString().split("T")[0]}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-300 shadow-xl overflow-hidden space-y-0">
+      {/* Worksheet Header */}
+      <div className="p-5 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700">
+        <div className="flex items-center space-x-3">
+          <div className="p-2.5 bg-emerald-600 rounded-xl text-white font-bold shadow-lg shadow-emerald-950">
+            <FileSpreadsheet className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 text-xs font-mono font-bold text-emerald-400">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>EXCEL INTERACTIVE WORKSHEET GRID</span>
+            </div>
+            <h2 className="text-lg font-black tracking-tight text-white mt-0.5">
+              Lembar Kerja Pencapaian Target {isHeadArea ? "(17 Unit Mikro Regional)" : `— ${activeUnitScope}`}
+            </h2>
+            <p className="text-xs text-slate-300 mt-0.5">
+              Ketik langsung nilai target & realisasi pada sel tabel. Data otomatis terkalkulasi.
+            </p>
+          </div>
+        </div>
+
+        {/* Action Toolbar */}
+        <div className="flex flex-wrap items-center gap-2">
+          {isHeadArea && (
+            <button
+              onClick={handleAddRow}
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+            >
+              <Plus className="w-4 h-4 text-emerald-400" />
+              <span>Tambah Baris Unit</span>
+            </button>
+          )}
+
+          <button
+            onClick={handleExportCSV}
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+          >
+            <Download className="w-4 h-4 text-blue-400" />
+            <span>Export CSV</span>
+          </button>
+
+          <button
+            onClick={handleBatchSave}
+            disabled={isSaving}
+            className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-950/40 disabled:opacity-50"
+          >
+            {isSaving ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            <span>Simpan & Sync Sheet</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Table Filter & Success Toast */}
+      <div className="bg-slate-100 p-3 px-5 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="relative w-full sm:w-72">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder="Cari kode / nama unit..."
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium outline-none focus:border-emerald-500"
+            />
+          </div>
+          <span className="text-[11px] font-mono text-slate-500 font-bold shrink-0">
+            {displayedRows.length} Baris Tampil
+          </span>
+        </div>
+
+        {saveSuccessMsg && (
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold rounded-lg animate-pulse">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span>{saveSuccessMsg}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Main Interactive Excel Table Grid */}
+      <div className="overflow-x-auto max-h-[550px] overflow-y-auto">
+        <table className="w-full border-collapse text-left text-xs font-sans">
+          <thead className="bg-[#0F172A] text-slate-200 uppercase text-[10px] font-mono tracking-wider sticky top-0 z-20 shadow-md">
+            <tr>
+              <th className="p-3 border-r border-slate-700 w-10 text-center">#</th>
+              <th className="p-3 border-r border-slate-700 min-w-[90px]">Kode</th>
+              <th className="p-3 border-r border-slate-700 min-w-[180px]">Nama Kantor Unit</th>
+              <th className="p-3 border-r border-slate-700 min-w-[150px] text-right bg-emerald-950/60 text-emerald-300">
+                Target Kredit (Rp)
+              </th>
+              <th className="p-3 border-r border-slate-700 min-w-[150px] text-right bg-emerald-950/60 text-emerald-300">
+                Realisasi Kredit (Rp)
+              </th>
+              <th className="p-3 border-r border-slate-700 min-w-[90px] text-center bg-emerald-900/80 text-white font-bold">
+                % Ach
+              </th>
+              <th className="p-3 border-r border-slate-700 min-w-[140px] text-right bg-blue-950/60 text-blue-300">
+                Target DPK (Rp)
+              </th>
+              <th className="p-3 border-r border-slate-700 min-w-[140px] text-right bg-blue-950/60 text-blue-300">
+                Realisasi DPK (Rp)
+              </th>
+              <th className="p-3 border-r border-slate-700 min-w-[80px] text-center bg-blue-900/80 text-white font-bold">
+                % Ach
+              </th>
+              <th className="p-3 border-r border-slate-700 min-w-[100px] text-center bg-amber-950/60 text-amber-300">
+                Collection %
+              </th>
+              <th className="p-3 border-r border-slate-700 min-w-[90px] text-center bg-rose-950/60 text-rose-300">
+                NPL %
+              </th>
+              <th className="p-3 border-r border-slate-700 min-w-[90px] text-center bg-purple-950/60 text-purple-300">
+                DKP %
+              </th>
+              <th className="p-3 border-r border-slate-700 min-w-[110px] text-center">Status KPI</th>
+              <th className="p-3 border-r border-slate-700 min-w-[70px] text-center">AO</th>
+              <th className="p-3 border-r border-slate-700 min-w-[80px] text-center">Debitur</th>
+              {isHeadArea && <th className="p-3 text-center w-12">Aksi</th>}
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-slate-200 bg-white font-medium text-slate-800">
+            {displayedRows.map((row, idx) => {
+              const achKredit = calculateAch(row.realisasi_kredit, row.target_kredit);
+              const achFunding = calculateAch(row.realisasi_funding, row.target_funding);
+              const kpiBadge = getKpiBadge(achKredit, row.npl_percentage);
+
+              return (
+                <tr
+                  key={row.id}
+                  className={`hover:bg-amber-50/60 transition-colors ${
+                    row.isModified ? "bg-amber-50/40" : idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"
+                  }`}
+                >
+                  <td className="p-2 border-r border-slate-200 text-center font-mono text-[10px] text-slate-400 font-bold bg-slate-100/50">
+                    {idx + 1}
+                  </td>
+
+                  <td className="p-1 border-r border-slate-200 font-mono font-bold text-slate-900">
+                    {isHeadArea ? (
+                      <input
+                        type="text"
+                        value={row.unit_code}
+                        onChange={(e) => handleCellChange(row.id, "unit_code", e.target.value)}
+                        className="w-full bg-transparent px-2 py-1 font-mono font-bold outline-none focus:bg-white focus:ring-1 focus:ring-emerald-500 rounded"
+                      />
+                    ) : (
+                      <span className="px-2">{row.unit_code}</span>
+                    )}
+                  </td>
+
+                  <td className="p-1 border-r border-slate-200 font-bold text-slate-900">
+                    {isHeadArea ? (
+                      <input
+                        type="text"
+                        value={row.unit_name}
+                        onChange={(e) => handleCellChange(row.id, "unit_name", e.target.value)}
+                        className="w-full bg-transparent px-2 py-1 font-semibold outline-none focus:bg-white focus:ring-1 focus:ring-emerald-500 rounded"
+                      />
+                    ) : (
+                      <span className="px-2 truncate block">{row.unit_name}</span>
+                    )}
+                  </td>
+
+                  <td className="p-1 border-r border-slate-200 bg-emerald-50/20">
+                    <input
+                      type="number"
+                      value={row.target_kredit}
+                      onChange={(e) => handleCellChange(row.id, "target_kredit", e.target.value)}
+                      className="w-full text-right font-mono font-bold px-2 py-1 bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500 rounded text-slate-900"
+                    />
+                  </td>
+
+                  <td className="p-1 border-r border-slate-200 bg-emerald-50/30">
+                    <input
+                      type="number"
+                      value={row.realisasi_kredit}
+                      onChange={(e) => handleCellChange(row.id, "realisasi_kredit", e.target.value)}
+                      className="w-full text-right font-mono font-black px-2 py-1 bg-transparent text-emerald-700 outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500 rounded"
+                    />
+                  </td>
+
+                  <td className="p-2 border-r border-slate-200 text-center font-mono font-black bg-emerald-100/60">
+                    <span className={achKredit >= 100 ? "text-emerald-700" : achKredit >= 80 ? "text-amber-700" : "text-rose-600"}>
+                      {achKredit.toFixed(1)}%
+                    </span>
+                  </td>
+
+                  <td className="p-1 border-r border-slate-200 bg-blue-50/20">
+                    <input
+                      type="number"
+                      value={row.target_funding}
+                      onChange={(e) => handleCellChange(row.id, "target_funding", e.target.value)}
+                      className="w-full text-right font-mono font-bold px-2 py-1 bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 rounded text-slate-900"
+                    />
+                  </td>
+
+                  <td className="p-1 border-r border-slate-200 bg-blue-50/30">
+                    <input
+                      type="number"
+                      value={row.realisasi_funding}
+                      onChange={(e) => handleCellChange(row.id, "realisasi_funding", e.target.value)}
+                      className="w-full text-right font-mono font-black px-2 py-1 bg-transparent text-blue-700 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 rounded"
+                    />
+                  </td>
+
+                  <td className="p-2 border-r border-slate-200 text-center font-mono font-black bg-blue-100/60 text-blue-800">
+                    {achFunding.toFixed(1)}%
+                  </td>
+
+                  <td className="p-1 border-r border-slate-200 bg-amber-50/20">
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={row.realisasi_collection}
+                      onChange={(e) => handleCellChange(row.id, "realisasi_collection", e.target.value)}
+                      className="w-full text-center font-mono font-bold px-1 py-1 bg-transparent text-slate-900 outline-none focus:bg-white focus:ring-2 focus:ring-amber-500 rounded"
+                    />
+                  </td>
+
+                  <td className={`p-1 border-r border-slate-200 ${row.npl_percentage > 3.0 ? "bg-rose-100/70" : "bg-emerald-50/20"}`}>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={row.npl_percentage}
+                      onChange={(e) => handleCellChange(row.id, "npl_percentage", e.target.value)}
+                      className={`w-full text-center font-mono font-black px-1 py-1 bg-transparent outline-none focus:bg-white focus:ring-2 focus:ring-rose-500 rounded ${
+                        row.npl_percentage > 3.0 ? "text-rose-700" : "text-emerald-700"
+                      }`}
+                    />
+                  </td>
+
+                  <td className="p-1 border-r border-slate-200 bg-purple-50/20">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={row.dkp_percentage}
+                      onChange={(e) => handleCellChange(row.id, "dkp_percentage", e.target.value)}
+                      className="w-full text-center font-mono font-bold px-1 py-1 bg-transparent text-purple-800 outline-none focus:bg-white focus:ring-2 focus:ring-purple-500 rounded"
+                    />
+                  </td>
+
+                  <td className="p-2 border-r border-slate-200 text-center">
+                    <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black border font-mono ${kpiBadge.bg}`}>
+                      {kpiBadge.label}
+                    </span>
+                  </td>
+
+                  <td className="p-1 border-r border-slate-200">
+                    <input
+                      type="number"
+                      value={row.ao_count}
+                      onChange={(e) => handleCellChange(row.id, "ao_count", e.target.value)}
+                      className="w-full text-center font-mono text-slate-700 px-1 py-1 bg-transparent outline-none focus:bg-white focus:ring-1 focus:ring-slate-400 rounded"
+                    />
+                  </td>
+
+                  <td className="p-1 border-r border-slate-200">
+                    <input
+                      type="number"
+                      value={row.total_customers}
+                      onChange={(e) => handleCellChange(row.id, "total_customers", e.target.value)}
+                      className="w-full text-center font-mono text-slate-700 px-1 py-1 bg-transparent outline-none focus:bg-white focus:ring-1 focus:ring-slate-400 rounded"
+                    />
+                  </td>
+
+                  {isHeadArea && (
+                    <td className="p-2 text-center">
+                      <button
+                        onClick={() => handleDeleteRow(row.id)}
+                        className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                        title="Hapus Baris Unit"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+
+          <tfoot className="bg-[#0F172A] text-white font-mono text-xs uppercase font-bold sticky bottom-0 z-20 shadow-inner">
+            <tr>
+              <td className="p-3 border-r border-slate-700 text-center" colSpan={3}>
+                TOTAL & RATA-RATA AREA REGIONAL
+              </td>
+              <td className="p-3 border-r border-slate-700 text-right text-emerald-300 font-extrabold">
+                {formatCurrency(totals.sumTargetKredit)}
+              </td>
+              <td className="p-3 border-r border-slate-700 text-right text-emerald-400 font-black">
+                {formatCurrency(totals.sumRealisasiKredit)}
+              </td>
+              <td className="p-3 border-r border-slate-700 text-center font-black bg-emerald-900 text-white">
+                {totals.achKredit.toFixed(1)}%
+              </td>
+              <td className="p-3 border-r border-slate-700 text-right text-blue-300 font-extrabold">
+                {formatCurrency(totals.sumTargetFunding)}
+              </td>
+              <td className="p-3 border-r border-slate-700 text-right text-blue-400 font-black">
+                {formatCurrency(totals.sumRealisasiFunding)}
+              </td>
+              <td className="p-3 border-r border-slate-700 text-center font-black bg-blue-900 text-white">
+                {totals.achFunding.toFixed(1)}%
+              </td>
+              <td className="p-3 border-r border-slate-700 text-center text-amber-300">
+                {totals.avgCollection.toFixed(1)}%
+              </td>
+              <td className={`p-3 border-r border-slate-700 text-center ${totals.avgNpl <= 3.0 ? "text-emerald-400" : "text-rose-400"}`}>
+                {totals.avgNpl.toFixed(2)}%
+              </td>
+              <td className="p-3 border-r border-slate-700 text-center text-purple-300">
+                {totals.avgDkp.toFixed(2)}%
+              </td>
+              <td className="p-3 border-r border-slate-700 text-center text-[10px] text-slate-300">
+                {totals.achKredit >= 100 ? "EXCELLENT" : "ON GOING"}
+              </td>
+              <td className="p-3 border-r border-slate-700 text-center text-slate-300">
+                {displayedRows.reduce((a, b) => a + b.ao_count, 0)}
+              </td>
+              <td className="p-3 border-r border-slate-700 text-center text-slate-300">
+                {displayedRows.reduce((a, b) => a + b.total_customers, 0).toLocaleString()}
+              </td>
+              {isHeadArea && <td className="p-3"></td>}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2 font-mono">
+        <div className="flex items-center gap-2">
+          <Calculator className="w-4 h-4 text-emerald-600" />
+          <span>Formulasi otomatis aktif. Sel yang diubah akan disorot warna kuning lembut.</span>
+        </div>
+        <div>
+          <span>Status Engine: </span>
+          <strong className="text-emerald-600">● Live Canvas Single-File Ready</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
   const [currentRole, setCurrentRole] = useState<Role>("AREA_HEAD");
   const [activeUnitScope, setActiveUnitScope] = useState<string>("KMU-01");
   const [activeMenu, setActiveMenu] = useState<string>("Dashboard");
-  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
 
-  const [loginEmail, setLoginEmail] = useState<string>("");
-  const [loginPassword, setLoginPassword] = useState<string>("");
-  const [loginError, setLoginError] = useState<string>("");
-  const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
+  const [units, setUnits] = useState<UnitDetail[]>(DEFAULT_UNITS);
+  const [metrics, setMetrics] = useState<PerformanceMetric[]>(DEFAULT_METRICS);
+  const [reports, setReports] = useState<DailyReport[]>(DEFAULT_REPORTS);
+  const [broadcasts, setBroadcasts] = useState<BroadcastMessage[]>(DEFAULT_BROADCASTS);
+  const [notifications, setNotifications] = useState<SystemNotification[]>(DEFAULT_NOTIFICATIONS);
 
-  const [units] = useState<UnitDetail[]>(INITIAL_UNITS);
-  const [metrics, setMetrics] = useState<PerformanceMetric[]>(INITIAL_METRICS);
-  const [reports, setReports] = useState<DailyReport[]>(INITIAL_REPORTS);
-  const [broadcasts, setBroadcasts] = useState<BroadcastMessage[]>(INITIAL_BROADCASTS);
-  const [notifications] = useState<SystemNotification[]>(INITIAL_NOTIFICATIONS);
-
-  const [isConnectedLive, setIsConnectedLive] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedUnitDetail, setSelectedUnitDetail] = useState<UnitDetail | null>(null);
+  const [editingMetric, setEditingMetric] = useState<PerformanceMetric | null>(null);
 
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState<boolean>(false);
   const [newBroadcastTitle, setNewBroadcastTitle] = useState<string>("");
   const [newBroadcastContent, setNewBroadcastContent] = useState<string>("");
 
-  // Worksheet Form States for Branch Units
-  const [worksheetTargetKredit, setWorksheetTargetKredit] = useState<number>(1500000000);
-  const [worksheetRealisasiKredit, setWorksheetRealisasiKredit] = useState<number>(1620000000);
-  const [worksheetTargetFunding, setWorksheetTargetFunding] = useState<number>(1000000000);
-  const [worksheetRealisasiFunding, setWorksheetRealisasiFunding] = useState<number>(1050000000);
-  const [worksheetCollectionRate, setWorksheetCollectionRate] = useState<number>(92.5);
-  const [worksheetNPL, setWorksheetNPL] = useState<number>(1.85);
-  const [worksheetDKP, setWorksheetDKP] = useState<number>(2.40);
-  const [worksheetAOCount, setWorksheetAOCount] = useState<number>(4);
-  const [worksheetDebiturCount, setWorksheetDebiturCount] = useState<number>(520);
-  const [worksheetReportSummary, setWorksheetReportSummary] = useState<string>("");
-  const [worksheetObstacles, setWorksheetObstacles] = useState<string>("");
-
-  const [areaHeadNoteInput, setAreaHeadNoteInput] = useState<string>("");
-  const [editingMetric, setEditingMetric] = useState<PerformanceMetric | null>(null);
-
-  // Sync state form worksheet saat scope unit berganti
-  useEffect(() => {
-    const currentScopedMetric = metrics.find((m) => m.unit_code === activeUnitScope);
-    const currentScopedUnit = units.find((u) => u.code === activeUnitScope);
-
-    if (currentScopedMetric) {
-      setWorksheetTargetKredit(currentScopedMetric.target_kredit);
-      setWorksheetRealisasiKredit(currentScopedMetric.realisasi_kredit);
-      setWorksheetTargetFunding(currentScopedMetric.target_funding);
-      setWorksheetRealisasiFunding(currentScopedMetric.realisasi_funding);
-      setWorksheetCollectionRate(currentScopedMetric.realisasi_collection);
-      setWorksheetNPL(currentScopedMetric.npl_percentage);
-      setWorksheetDKP(currentScopedMetric.dkp_percentage || 2.1);
-    }
-    if (currentScopedUnit) {
-      setWorksheetAOCount(currentScopedUnit.aoCount);
-      setWorksheetDebiturCount(currentScopedUnit.totalCustomers);
-    }
-  }, [activeUnitScope, metrics, units]);
-
-  const fetchLiveData = async () => {
-    if (!supabase) {
-      setIsConnectedLive(false);
-      return;
-    }
-    setIsLoading(true);
-    try {
-      const resMetrics = await supabase.from("performance_metrics").select("*");
-      const resUnits = await supabase.from("units").select("*");
-      const resReports = await supabase.from("daily_reports").select("*");
-
-      if (resMetrics && resMetrics.data && resMetrics.data.length > 0) {
-        const unitsMap = new Map((resUnits.data || []).map((u: any) => [u.id, u]));
-        
-        const formattedMetrics: PerformanceMetric[] = resMetrics.data.map((m: any) => {
-          const matchedUnit: any = unitsMap.get(m.unit_id) || {};
-          return {
-            id: m.id,
-            unit_id: m.unit_id,
-            unit_name: matchedUnit.name || "Kantor Mikro Unit",
-            unit_code: matchedUnit.code || "KMU-00",
-            period_date: m.period_date,
-            target_kredit: Number(m.target_kredit),
-            realisasi_kredit: Number(m.realisasi_kredit),
-            target_funding: Number(m.target_funding),
-            realisasi_funding: Number(m.realisasi_funding),
-            target_collection: 95,
-            realisasi_collection: 90,
-            npl_percentage: Number(m.npl_percentage),
-            dkp_percentage: Number(m.dkp_percentage || 2.1),
-            profit: 150000000,
-            last_update: "Hari Ini",
-            submitted_today: true
-          };
-        });
-        setMetrics(formattedMetrics);
-
-        if (resReports && resReports.data && resReports.data.length > 0) {
-          const formattedReports: DailyReport[] = resReports.data.map((r: any) => {
-            const matchedUnit: any = unitsMap.get(r.unit_id) || {};
-            return {
-              id: r.id,
-              unit_id: r.unit_id,
-              unit_name: matchedUnit.name || "Kantor Mikro Unit",
-              unit_code: matchedUnit.code || "KMU-00",
-              report_type: r.report_type || "HARIAN",
-              report_date: r.report_date,
-              operational_summary: r.operational_summary,
-              obstacles: r.obstacles || "",
-              status: r.status || "PENDING",
-              area_head_notes: r.area_head_notes || "",
-            };
-          });
-          setReports(formattedReports);
-        }
-
-        setIsConnectedLive(true);
-      } else {
-        setIsConnectedLive(false);
-      }
-    } catch (err) {
-      console.warn("Menggunakan Local Fallback State:", err);
-      setIsConnectedLive(false);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchLiveData();
-  }, []);
-
   const formatRupiah = (val: number) =>
     new Intl.NumberFormat("id-ID", {
       style: "currency",
       currency: "IDR",
-      maximumFractionDigits: 0,
+      maximumFractionDigits: 0
     }).format(val);
 
-  const getAchievement = (realization: number, target: number) =>
-    target > 0 ? (realization / target) * 100 : 0;
+  const getAchievement = (realization: number, target: number) => {
+    if (!target || target === 0) return 0;
+    return (realization / target) * 100;
+  };
 
   const scopedMetrics = useMemo(() => {
     if (currentRole === "KEPALA_UNIT") {
@@ -491,769 +888,327 @@ export default function CommandCenter() {
     return metrics;
   }, [metrics, currentRole, activeUnitScope]);
 
-  const activeUnitInfo = useMemo(() => {
-    return units.find((u) => u.code === activeUnitScope) || units[0];
-  }, [units, activeUnitScope]);
+  const aggregateTotals = useMemo(() => {
+    const totalTargetKredit = scopedMetrics.reduce((acc, curr) => acc + curr.target_kredit, 0);
+    const totalRealisasiKredit = scopedMetrics.reduce((acc, curr) => acc + curr.realisasi_kredit, 0);
+    const totalTargetFunding = scopedMetrics.reduce((acc, curr) => acc + curr.target_funding, 0);
+    const totalRealisasiFunding = scopedMetrics.reduce((acc, curr) => acc + curr.realisasi_funding, 0);
 
-  const totalTargetKredit = metrics.reduce((acc, m) => acc + m.target_kredit, 0);
-  const totalRealisasiKredit = metrics.reduce((acc, m) => acc + m.realisasi_kredit, 0);
-  const regionalKreditAchievement = getAchievement(totalRealisasiKredit, totalTargetKredit);
+    const avgNpl =
+      scopedMetrics.length > 0
+        ? scopedMetrics.reduce((acc, curr) => acc + curr.npl_percentage, 0) / scopedMetrics.length
+        : 0;
 
-  const totalTargetFunding = metrics.reduce((acc, m) => acc + m.target_funding, 0);
-  const totalRealisasiFunding = metrics.reduce((acc, m) => acc + m.realisasi_funding, 0);
+    const avgCollection =
+      scopedMetrics.length > 0
+        ? scopedMetrics.reduce((acc, curr) => acc + curr.realisasi_collection, 0) / scopedMetrics.length
+        : 0;
 
-  const avgNPL = metrics.length > 0 ? metrics.reduce((acc, m) => acc + m.npl_percentage, 0) / metrics.length : 0;
-  const targetAchievedCount = metrics.filter((m) => getAchievement(m.realisasi_kredit, m.target_kredit) >= 100).length;
+    return {
+      totalTargetKredit,
+      totalRealisasiKredit,
+      achKredit: getAchievement(totalRealisasiKredit, totalTargetKredit),
+      totalTargetFunding,
+      totalRealisasiFunding,
+      achFunding: getAchievement(totalRealisasiFunding, totalTargetFunding),
+      avgNpl,
+      avgCollection
+    };
+  }, [scopedMetrics]);
 
-  const sortedByPerformance = useMemo(() => {
-    return [...metrics].sort((a, b) => getAchievement(b.realisasi_kredit, b.target_kredit) - getAchievement(a.realisasi_kredit, a.target_kredit));
-  }, [metrics]);
-
-  const top5Units = sortedByPerformance.slice(0, 5);
-  const bottom5Units = sortedByPerformance.slice(-5).reverse();
-
-  const menuItems = useMemo(() => {
-    if (currentRole === "AREA_HEAD" || currentRole === "SUPER_ADMIN") {
-      return [
-        { name: "Dashboard", icon: LayoutDashboard },
-        { name: "Monitoring Unit", icon: Building2 },
-        { name: "Approval", icon: CheckSquare, badge: reports.filter(r => r.status === "PENDING").length },
-        { name: "Laporan Area", icon: FileText },
-        { name: "Broadcast", icon: Megaphone },
-        { name: "Notifikasi", icon: Bell, badge: notifications.filter(n => !n.isRead).length },
-        { name: "Profil", icon: User },
-      ];
-    } else {
-      return [
-        { name: "Dashboard Unit", icon: LayoutDashboard },
-        { name: "Input Worksheet Unit", icon: Send },
-        { name: "Monitoring Target", icon: Target },
-        { name: "Pesan dari Head", icon: Mail, badge: broadcasts.filter(b => !b.readBy.includes(activeUnitScope)).length },
-        { name: "Notifikasi Unit", icon: Bell },
-        { name: "Profil Unit", icon: User },
-      ];
-    }
-  }, [currentRole, reports, notifications, broadcasts, activeUnitScope]);
-
-  const handleLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsAuthenticating(true);
-    setLoginError("");
-
-    setTimeout(() => {
-      setIsAuthenticating(false);
-      setIsAuthenticated(true);
-      setActiveMenu(currentRole === "KEPALA_UNIT" ? "Dashboard Unit" : "Dashboard");
-    }, 600);
+  const handleSaveWorksheetBatch = (updatedMetrics: PerformanceMetric[]) => {
+    setMetrics(updatedMetrics);
   };
 
-  const handleQuickLogin = (role: Role, unitCode: string = "KMU-01") => {
-    setCurrentRole(role);
-    setActiveUnitScope(unitCode);
-    setLoginEmail(
-      role === "AREA_HEAD"
-        ? "areahead@bank.co.id"
-        : role === "KEPALA_UNIT"
-        ? `kepala.${unitCode.toLowerCase()}@bank.co.id`
-        : "admin.it@bank.co.id"
+  const handleApproveReport = (reportId: string, newStatus: "APPROVED" | "REVISION") => {
+    setReports((prev) =>
+      prev.map((r) => (r.id === reportId ? { ...r, status: newStatus } : r))
     );
-    setLoginPassword("••••••••");
-    setIsAuthenticated(true);
-    setActiveMenu(role === "KEPALA_UNIT" ? "Dashboard Unit" : "Dashboard");
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setLoginEmail("");
-    setLoginPassword("");
+  const handleMarkBroadcastRead = (broadcastId: string) => {
+    setBroadcasts((prev) =>
+      prev.map((bc) => {
+        if (bc.id === broadcastId && !bc.readBy.includes(activeUnitScope)) {
+          return { ...bc, readBy: [...bc.readBy, activeUnitScope] };
+        }
+        return bc;
+      })
+    );
   };
 
   const handleSendBroadcast = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBroadcastTitle.trim() || !newBroadcastContent.trim()) return;
 
-    const created: BroadcastMessage = {
+    const newMsg: BroadcastMessage = {
       id: `bc-${Date.now()}`,
       title: newBroadcastTitle,
       content: newBroadcastContent,
-      date: "Baru Saja",
-      sender: "Head Area Regional",
+      date: "Hari ini",
+      sender: currentRole === "SUPER_ADMIN" ? "Super Admin" : "Drs. Bambang Hermawan (Area Head)",
       readBy: []
     };
 
-    setBroadcasts([created, ...broadcasts]);
+    setBroadcasts([newMsg, ...broadcasts]);
     setNewBroadcastTitle("");
     setNewBroadcastContent("");
     setIsBroadcastModalOpen(false);
   };
 
-  const handleMarkBroadcastRead = (id: string) => {
-    setBroadcasts(prev => prev.map(b => {
-      if (b.id === id && !b.readBy.includes(activeUnitScope)) {
-        return { ...b, readBy: [...b.readBy, activeUnitScope] };
-      }
-      return b;
-    }));
-  };
-
-  // Submit Laporan Worksheet Unit (Satu Klik Langsung Sync Ke Supabase)
-  const handleSaveWorksheetUnit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const currentUnitData = units.find(u => u.code === activeUnitScope);
-    if (!currentUnitData) return;
-
-    // 1. Update State Metrics Lokal
-    setMetrics(prev => prev.map(m => {
-      if (m.unit_code === activeUnitScope) {
-        return {
-          ...m,
-          target_kredit: worksheetTargetKredit,
-          realisasi_kredit: worksheetRealisasiKredit,
-          target_funding: worksheetTargetFunding,
-          realisasi_funding: worksheetRealisasiFunding,
-          realisasi_collection: worksheetCollectionRate,
-          npl_percentage: worksheetNPL,
-          dkp_percentage: worksheetDKP,
-          last_update: "Baru Saja",
-          submitted_today: true
-        };
-      }
-      return m;
-    }));
-
-    // 2. Buat Catatan Laporan Harian
-    if (worksheetReportSummary.trim()) {
-      const newRep: DailyReport = {
-        id: `rep-${Date.now()}`,
-        unit_id: currentUnitData.id,
-        unit_name: currentUnitData.name,
-        unit_code: activeUnitScope,
-        report_type: "HARIAN",
-        report_date: new Date().toISOString().split("T")[0],
-        operational_summary: worksheetReportSummary,
-        obstacles: worksheetObstacles || "Tidak ada kendala.",
-        status: "PENDING",
-        area_head_notes: ""
-      };
-      setReports([newRep, ...reports]);
-    }
-
-    // 3. Mutasi Ke Supabase Database jika terhubung
-    if (supabase && isConnectedLive) {
-      const targetMetric = metrics.find(m => m.unit_code === activeUnitScope);
-      if (targetMetric) {
-        await supabase.from("performance_metrics").update(targetMetric.id, {
-          target_kredit: worksheetTargetKredit,
-          realisasi_kredit: worksheetRealisasiKredit,
-          target_funding: worksheetTargetFunding,
-          realisasi_funding: worksheetRealisasiFunding,
-          npl_percentage: worksheetNPL,
-          updated_at: new Date().toISOString()
-        });
-      }
-      fetchLiveData();
-    }
-
-    alert(`✓ Data Worksheet ${activeUnitScope} Berhasil Disimpan & Tersambung Ke Head Area!`);
-    setWorksheetReportSummary("");
-    setWorksheetObstacles("");
-  };
-
-  const handleApproveReport = async (id: string, status: "APPROVED" | "REVISION") => {
-    const updatedNotes = areaHeadNoteInput || "";
-    setReports(prev => prev.map(r => r.id === id ? { ...r, status, area_head_notes: updatedNotes || r.area_head_notes } : r));
-    
-    if (supabase && isConnectedLive) {
-      await supabase.from("daily_reports").update(id, {
-        status,
-        area_head_notes: updatedNotes
-      });
-      fetchLiveData();
-    }
-
-    setAreaHeadNoteInput("");
-  };
-
-  const handleSaveMetricUpdate = async (e: React.FormEvent) => {
+  const handleSaveMetricUpdate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMetric) return;
 
-    const updated = { ...editingMetric };
-    setMetrics(prev => prev.map(m => m.id === updated.id ? updated : m));
-
-    if (supabase && isConnectedLive) {
-      await supabase.from("performance_metrics").update(updated.id, {
-        target_kredit: updated.target_kredit,
-        realisasi_kredit: updated.realisasi_kredit,
-        updated_at: new Date().toISOString()
-      });
-      fetchLiveData();
-    }
-
+    setMetrics((prev) =>
+      prev.map((m) => (m.id === editingMetric.id ? { ...editingMetric } : m))
+    );
     setEditingMetric(null);
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-[#0F172A] text-slate-100 font-sans flex flex-col justify-center items-center p-4 relative overflow-hidden selection:bg-emerald-500 selection:text-slate-900">
-        <div className="absolute -top-32 -left-32 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none"></div>
-
-        <div className="w-full max-w-md space-y-6 relative z-10">
-          <div className="text-center space-y-2">
-            <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl flex items-center justify-center mx-auto shadow-2xl shadow-emerald-950 border border-emerald-400/30">
-              <Building2 className="w-9 h-9 text-white" />
-            </div>
-            <h1 className="text-2xl font-black tracking-wider uppercase text-white leading-tight">
-              MICRO-UNIT PORTAL
-            </h1>
-            <p className="text-xs text-slate-400 font-mono tracking-widest uppercase">
-              Command Center Perbankan Regional
-            </p>
-          </div>
-
-          <div className="bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
-            <div className="border-b border-slate-800 pb-4">
-              <h2 className="text-base font-extrabold text-white flex items-center gap-2">
-                <LogIn className="w-4 h-4 text-emerald-400" /> Masuk Ke Portal Resmi
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">
-                Gunakan kredensial resmi Head Area atau Kepala Unit
-              </p>
-            </div>
-
-            <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1">
-                  <Shield className="w-3 h-3 text-emerald-400" /> Tipe Hak Akses (Role):
-                </label>
-                <select
-                  value={currentRole}
-                  onChange={(e) => setCurrentRole(e.target.value as Role)}
-                  className="w-full bg-[#0F172A] text-white font-bold rounded-xl p-3 border border-slate-700 outline-none focus:border-emerald-500"
-                >
-                  <option value="AREA_HEAD">Head Area (Supervisor 17 Unit)</option>
-                  <option value="KEPALA_UNIT">Kepala Unit (Scoped Branch)</option>
-                  <option value="SUPER_ADMIN">Super Admin (IT Master)</option>
-                </select>
-              </div>
-
-              {currentRole === "KEPALA_UNIT" && (
-                <div className="p-3 bg-amber-950/30 border border-amber-500/30 rounded-xl space-y-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-amber-400">
-                    Pilih Cabang Unit Anda:
-                  </label>
-                  <select
-                    value={activeUnitScope}
-                    onChange={(e) => setActiveUnitScope(e.target.value)}
-                    className="w-full bg-[#0F172A] text-amber-300 font-mono font-bold rounded-lg p-2 border border-amber-500/40 outline-none cursor-pointer"
-                  >
-                    {units.map((u) => (
-                      <option key={u.code} value={u.code}>
-                        {u.code} — {u.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label className="block font-bold text-slate-300 mb-1">Email / ID Pengguna</label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="Contoh: headarea@bank.co.id"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2.5 bg-[#0F172A] border border-slate-700 rounded-xl text-white font-medium outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-300 mb-1">Kata Sandi</label>
-                <div className="relative">
-                  <Key className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                  <input
-                    type="password"
-                    required
-                    placeholder="••••••••"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2.5 bg-[#0F172A] border border-slate-700 rounded-xl text-white font-medium outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isAuthenticating}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-3 rounded-xl transition-all shadow-lg shadow-emerald-950 flex items-center justify-center gap-2 cursor-pointer mt-2"
-              >
-                {isAuthenticating ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    <LogIn className="w-4 h-4" /> Masuk Ke Dashboard
-                  </>
-                )}
-              </button>
-            </form>
-
-            <div className="pt-4 border-t border-slate-800 space-y-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block text-center">
-                Atau Klik Akses Demo Cepat:
-              </span>
-              <div className="grid grid-cols-2 gap-2 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => handleQuickLogin("AREA_HEAD")}
-                  className="p-2.5 bg-[#0F172A] hover:bg-slate-800 border border-slate-700 rounded-xl text-left transition-all text-slate-200 cursor-pointer"
-                >
-                  <span className="block text-[9px] font-bold text-emerald-400 uppercase">Head Area</span>
-                  Supervisor 17 Unit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickLogin("KEPALA_UNIT", "KMU-01")}
-                  className="p-2.5 bg-[#0F172A] hover:bg-slate-800 border border-slate-700 rounded-xl text-left transition-all text-slate-200 cursor-pointer"
-                >
-                  <span className="block text-[9px] font-bold text-amber-400 uppercase">Kepala Unit</span>
-                  KMU-01 Sukamaju
-                </button>
-              </div>
-            </div>
-
-          </div>
-
-          <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500 font-mono">
-            <Lock className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Sistem Informasi Micro-Unit Banking v2.0</span>
-          </div>
-
-        </div>
-      </div>
-    );
-  }
+  const activeUnitInfo = useMemo(() => {
+    return units.find((u) => u.code === activeUnitScope) || units[0];
+  }, [units, activeUnitScope]);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col md:flex-row selection:bg-slate-900 selection:text-emerald-400">
-      
-      <aside
-        className={`bg-[#0F172A] text-slate-300 w-full md:w-64 flex-shrink-0 transition-all duration-300 z-50 ${
-          isSidebarOpen ? "block" : "hidden md:block"
-        }`}
-      >
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-emerald-600 rounded-lg text-white font-bold">
-              <Building2 className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-sm font-extrabold tracking-wider uppercase text-white leading-tight">
-                COMMAND CENTER
-              </h1>
-              <p className="text-[10px] text-slate-400 font-mono">Micro-Unit Perbankan</p>
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans flex flex-col antialiased">
+      {/* Top Header Bar */}
+      <header className="sticky top-0 z-40 bg-[#0F172A] text-white shadow-xl border-b border-slate-800">
+        <div className="px-4 sm:px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="lg:hidden p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-emerald-600 rounded-xl text-white shadow-lg shadow-emerald-950">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h1 className="font-extrabold text-sm sm:text-base tracking-tight text-white leading-none">
+                  MICRO-UNIT AREA COMMAND CENTER
+                </h1>
+                <p className="text-[10px] text-emerald-400 font-mono font-bold mt-0.5">
+                  Monitoring Regional 17 Kantor Mikro Perbankan
+                </p>
+              </div>
             </div>
           </div>
-          <button
-            onClick={() => setIsSidebarOpen(false)}
-            className="md:hidden text-slate-400 hover:text-white"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          {/* Role Switcher Toolbar */}
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-[11px] font-mono font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span className="text-emerald-400">Live Preview Ready</span>
+            </div>
+
+            <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs">
+              <button
+                onClick={() => setCurrentRole("AREA_HEAD")}
+                className={`px-2.5 py-1 rounded-lg font-extrabold transition-all cursor-pointer ${
+                  currentRole === "AREA_HEAD" ? "bg-emerald-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Head Area
+              </button>
+              <button
+                onClick={() => setCurrentRole("KEPALA_UNIT")}
+                className={`px-2.5 py-1 rounded-lg font-extrabold transition-all cursor-pointer ${
+                  currentRole === "KEPALA_UNIT" ? "bg-emerald-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Kepala Unit
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="p-4 bg-slate-900/80 border-b border-slate-800 space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-            <Shield className="w-3 h-3 text-emerald-400" /> Mode Akses User:
-          </label>
-          <select
-            value={currentRole}
-            onChange={(e) => {
-              const role = e.target.value as Role;
-              setCurrentRole(role);
-              setActiveMenu(role === "KEPALA_UNIT" ? "Dashboard Unit" : "Dashboard");
-            }}
-            className="w-full bg-[#0F172A] text-white text-xs font-bold rounded-lg p-2 border border-slate-700 outline-none focus:border-emerald-500 cursor-pointer"
-          >
-            <option value="AREA_HEAD">Head Area (Supervisor 17 Unit)</option>
-            <option value="KEPALA_UNIT">Kepala Unit (Scoped Branch)</option>
-            <option value="SUPER_ADMIN">Super Admin (IT Master)</option>
-          </select>
-
-          {currentRole === "KEPALA_UNIT" && (
-            <div className="pt-2 space-y-1">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block">
-                Pilih Cabang Unit Anda:
-              </label>
+        {/* Sub-Header Scope Selector */}
+        {currentRole === "KEPALA_UNIT" && (
+          <div className="bg-slate-900 border-t border-slate-800 px-4 sm:px-6 py-2 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 font-semibold">Scoped Active Unit:</span>
               <select
                 value={activeUnitScope}
                 onChange={(e) => setActiveUnitScope(e.target.value)}
-                className="w-full bg-[#0F172A] text-amber-300 text-xs font-mono font-bold rounded-lg p-2 border border-amber-500/40 outline-none cursor-pointer"
+                className="bg-slate-800 border border-slate-700 text-emerald-400 font-mono font-bold rounded-lg px-2.5 py-1 outline-none focus:border-emerald-500"
               >
                 {units.map((u) => (
                   <option key={u.code} value={u.code}>
-                    {u.code} - {u.name}
+                    {u.code} — {u.name}
                   </option>
                 ))}
               </select>
             </div>
-          )}
-        </div>
+            <span className="text-[11px] text-slate-400 font-mono hidden md:inline">
+              Kepala Unit: <strong className="text-white">{activeUnitInfo.headName}</strong>
+            </span>
+          </div>
+        )}
+      </header>
 
-        <nav className="p-3 space-y-1">
-          <p className="px-3 text-[10px] font-bold text-slate-500 tracking-wider uppercase mb-2">
-            Menu Utama ({currentRole.replace("_", " ")})
-          </p>
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeMenu === item.name;
-            return (
-              <button
-                key={item.name}
-                onClick={() => setActiveMenu(item.name)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  isActive
-                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-950"
-                    : "text-slate-400 hover:bg-slate-800/80 hover:text-white"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-slate-400"}`} />
-                  <span>{item.name}</span>
-                </div>
-                {item.badge ? (
-                  <span className="px-2 py-0.5 text-[10px] font-black rounded-full bg-rose-500 text-white">
-                    {item.badge}
+      {/* Main Body Layout */}
+      <div className="flex-1 flex min-w-0">
+        {/* Sidebar */}
+        <aside
+          className={`fixed lg:static inset-y-0 left-0 z-30 w-64 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 ${
+            isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+          }`}
+        >
+          <div className="p-4 space-y-1 overflow-y-auto flex-1">
+            <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+              MAIN NAVIGATION ({currentRole})
+            </p>
+
+            {[
+              { label: "Dashboard", icon: LayoutDashboard },
+              { label: "Input Worksheet Unit", icon: FileSpreadsheet },
+              { label: "Monitoring Unit", icon: BarChart3 },
+              { label: "Approval", icon: CheckSquare },
+              { label: "Pesan dari Head", icon: Megaphone },
+              { label: "Notifikasi", icon: Bell },
+              { label: "Profil", icon: User }
+            ].map((menu) => {
+              const Icon = menu.icon;
+              const isActive = activeMenu === menu.label;
+              return (
+                <button
+                  key={menu.label}
+                  onClick={() => {
+                    setActiveMenu(menu.label);
+                    setIsSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
+                    isActive
+                      ? "bg-[#0F172A] text-white shadow-md shadow-slate-950/20"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${isActive ? "text-emerald-400" : "text-slate-400"}`} />
+                  <span>{menu.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="p-4 border-t border-slate-100 bg-slate-50 text-xs">
+            <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1">
+              <span className="text-[10px] text-slate-400 uppercase font-bold block">Status Regional</span>
+              <p className="font-bold text-slate-900">17 Unit Mikro</p>
+              <p className="text-[11px] text-emerald-600 font-mono font-bold">100% Operational</p>
+            </div>
+          </div>
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6 min-w-0">
+          {activeMenu === "Dashboard" && (
+            <div className="space-y-6">
+              {/* Executive Welcome Banner */}
+              <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-2xl p-6 sm:p-8 text-white shadow-2xl border border-slate-800 relative overflow-hidden">
+                <div className="max-w-2xl space-y-3 relative z-10">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800 text-xs font-bold font-mono">
+                    <Sparkles className="w-3.5 h-3.5" /> COMMAND CENTER REGIONAL 1
                   </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="p-4 border-t border-slate-800 bg-slate-950/50 mt-auto space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-8 h-8 rounded-full bg-slate-800 text-emerald-400 flex items-center justify-center font-bold text-xs border border-slate-700">
-                {currentRole === "AREA_HEAD" ? "HA" : currentRole === "KEPALA_UNIT" ? "KU" : "SA"}
-              </div>
-              <div>
-                <div className="text-xs font-bold text-white leading-none">
-                  {currentRole === "AREA_HEAD" ? "Drs. Bambang H." : currentRole === "KEPALA_UNIT" ? activeUnitInfo.headName : "Admin IT System"}
-                </div>
-                <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                  {currentRole === "KEPALA_UNIT" ? activeUnitScope : "Regional Office"}
+                  <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
+                    {currentRole === "AREA_HEAD"
+                      ? "Konsolidasi Performa 17 Kantor Mikro Unit"
+                      : `Laporan Realisasi Unit: ${activeUnitInfo.name}`}
+                  </h2>
+                  <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                    Pemantauan pencapaian target OS Kredit Mikro, Simpanan DPK, Collection Rate, dan Mitigasi Rasio NPL secara real-time.
+                  </p>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 border border-rose-900/30 transition-all cursor-pointer"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Keluar Sesi</span>
-          </button>
-        </div>
-      </aside>
+              {/* Core Metric Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Realisasi Kredit</span>
+                    <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600">
+                      <TrendingUp className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900 mt-2 font-mono">
+                    {formatRupiah(aggregateTotals.totalRealisasiKredit)}
+                  </h3>
+                  <div className="mt-2 flex items-center justify-between text-xs">
+                    <span className="text-slate-500">Target: {formatRupiah(aggregateTotals.totalTargetKredit)}</span>
+                    <span className={`font-extrabold ${aggregateTotals.achKredit >= 100 ? "text-emerald-600" : "text-amber-600"}`}>
+                      {aggregateTotals.achKredit.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
 
-      <div className="flex-1 flex flex-col min-w-0">
-        
-        <header className="bg-white border-b border-slate-200 px-4 sm:px-8 h-16 flex items-center justify-between sticky top-0 z-40 shadow-sm">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg md:hidden"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-            <div>
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                <span>Micro-Unit Portal</span>
-                <span>/</span>
-                <span className="text-emerald-600 font-mono">{activeMenu}</span>
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Realisasi DPK</span>
+                    <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600">
+                      <Building2 className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900 mt-2 font-mono">
+                    {formatRupiah(aggregateTotals.totalRealisasiFunding)}
+                  </h3>
+                  <div className="mt-2 flex items-center justify-between text-xs">
+                    <span className="text-slate-500">Target: {formatRupiah(aggregateTotals.totalTargetFunding)}</span>
+                    <span className="font-extrabold text-blue-600">
+                      {aggregateTotals.achFunding.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Rata-Rata NPL (%)</span>
+                    <div className={`p-2.5 rounded-xl ${aggregateTotals.avgNpl <= 3.0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
+                      <ShieldAlert className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <h3 className={`text-2xl font-black mt-2 font-mono ${aggregateTotals.avgNpl <= 3.0 ? "text-emerald-600" : "text-rose-600"}`}>
+                    {aggregateTotals.avgNpl.toFixed(2)}%
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">Batas Aman OJK / Internal: ≤ 3.00%</p>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Collection Rate</span>
+                    <div className="p-2.5 rounded-xl bg-purple-50 text-purple-600">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                    {aggregateTotals.avgCollection.toFixed(1)}%
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">Target Penagihan Angsuran: 95.0%</p>
+                </div>
               </div>
-              <h2 className="text-base font-extrabold text-slate-900 tracking-tight leading-none mt-0.5">
-                {activeMenu} {currentRole === "KEPALA_UNIT" ? `— ${activeUnitScope}` : ""}
-              </h2>
+
+              {/* Embedded Excel Interactive Sheet Grid */}
+              <WorksheetGrid
+                initialMetrics={scopedMetrics}
+                units={units}
+                activeUnitScope={activeUnitScope}
+                isHeadArea={currentRole === "AREA_HEAD" || currentRole === "SUPER_ADMIN"}
+                onSaveWorksheet={handleSaveWorksheetBatch}
+              />
             </div>
-          </div>
+          )}
 
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 border border-slate-200 text-slate-700">
-              <Database className="w-3.5 h-3.5 text-slate-500" />
-              <span>Status Data:</span>
-              {isConnectedLive ? (
-                <span className="text-emerald-600 font-bold flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Live Supabase
-                </span>
-              ) : (
-                <span className="text-amber-600 font-bold">Local Fallback</span>
-              )}
-            </div>
-
-            <button
-              onClick={fetchLiveData}
-              disabled={isLoading}
-              className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-all cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-emerald-600" : ""}`} />
-              <span className="hidden sm:inline">Sync Data</span>
-            </button>
-          </div>
-        </header>
-
-        <main className="p-4 sm:p-8 space-y-8 max-w-7xl w-full mx-auto">
-          
-          {(activeMenu === "Dashboard" || activeMenu === "Dashboard Unit") && (
-            <div className="space-y-8">
-              {currentRole === "KEPALA_UNIT" ? (
-                <div className="space-y-6">
-                  <div className="bg-gradient-to-r from-[#0F172A] to-slate-800 text-white p-6 rounded-2xl border border-slate-800 shadow-sm relative overflow-hidden">
-                    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 relative z-10">
-                      <div>
-                        <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-mono font-bold border border-emerald-500/30">
-                          SCOPED ACCESS: {activeUnitScope}
-                        </span>
-                        <h2 className="text-xl font-extrabold tracking-tight mt-2">{activeUnitInfo.name}</h2>
-                        <p className="text-xs text-slate-300 mt-1">
-                          Kepala Unit: <b>{activeUnitInfo.headName}</b> | Total AO: <b>{activeUnitInfo.aoCount} Personil</b> | Total Nasabah: <b>{activeUnitInfo.totalCustomers} Debitur</b>
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-xs text-slate-400 block font-semibold">Status Kinerja Unit:</span>
-                        <span className="text-xl font-black text-emerald-400">
-                          {getAchievement(scopedMetrics[0]?.realisasi_kredit || 0, scopedMetrics[0]?.target_kredit || 1).toFixed(1)}% (ON TARGET)
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Target vs Realisasi Kredit</span>
-                      <div className="text-xl font-black text-slate-900 mt-2">{formatRupiah(scopedMetrics[0]?.realisasi_kredit || 0)}</div>
-                      <div className="text-xs text-slate-500 mt-1">Target: {formatRupiah(scopedMetrics[0]?.target_kredit || 0)}</div>
-                    </div>
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Target vs Realisasi DPK</span>
-                      <div className="text-xl font-black text-slate-900 mt-2">{formatRupiah(scopedMetrics[0]?.realisasi_funding || 0)}</div>
-                      <div className="text-xs text-slate-500 mt-1">Target: {formatRupiah(scopedMetrics[0]?.target_funding || 0)}</div>
-                    </div>
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Rate NPL Unit</span>
-                      <div className={`text-xl font-black mt-2 ${(scopedMetrics[0]?.npl_percentage || 0) <= 3 ? "text-emerald-600" : "text-rose-600"}`}>
-                        {scopedMetrics[0]?.npl_percentage.toFixed(2)}%
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">Max Toleransi: 3.00%</div>
-                    </div>
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Rate Collection Rate</span>
-                      <div className="text-xl font-black text-blue-600 mt-2">{scopedMetrics[0]?.realisasi_collection}%</div>
-                      <div className="text-xs text-slate-500 mt-1">Target: 95.0%</div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-6">
-
-                  {/* WIDGET LIVE TRACKER INPUT 17 UNIT UNTUK HEAD AREA */}
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <div>
-                        <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Status Pengiriman Worksheet 17 Unit Hari Ini
-                        </h3>
-                        <p className="text-xs text-slate-500">
-                          {metrics.filter(m => m.submitted_today).length} dari 17 Unit Telah Mengirimkan Pembaruan Data
-                        </p>
-                      </div>
-                      <span className="px-3 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-lg text-xs">
-                        {((metrics.filter(m => m.submitted_today).length / 17) * 100).toFixed(0)}% Laporan Masuk
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-2 text-xs">
-                      {metrics.map((m) => (
-                        <div
-                          key={m.id}
-                          className={`p-2 rounded-lg border text-center font-mono font-bold transition-all ${
-                            m.submitted_today
-                              ? "bg-emerald-50 border-emerald-300 text-emerald-800"
-                              : "bg-slate-50 border-slate-200 text-slate-400"
-                          }`}
-                        >
-                          <span className="block text-[10px] uppercase font-sans text-slate-500">{m.unit_code}</span>
-                          <span className="text-[11px]">{m.submitted_today ? "✓ UPDATED" : "PENDING"}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                          Total Outstanding Kredit
-                        </span>
-                        <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-                          <TrendingUp className="w-4 h-4" />
-                        </div>
-                      </div>
-                      <div className="text-2xl font-black text-slate-900 mt-2">
-                        {formatRupiah(totalRealisasiKredit)}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        Target: <span className="font-semibold text-slate-700">{formatRupiah(totalTargetKredit)}</span>
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-slate-100 flex justify-between text-xs font-bold">
-                        <span className="text-slate-500">Pencapaian Area:</span>
-                        <span className="text-emerald-600">{regionalKreditAchievement.toFixed(1)}%</span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                          Total DPK / Funding
-                        </span>
-                        <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-                          <Building2 className="w-4 h-4" />
-                        </div>
-                      </div>
-                      <div className="text-2xl font-black text-slate-900 mt-2">
-                        {formatRupiah(totalRealisasiFunding)}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        Target: <span className="font-semibold text-slate-700">{formatRupiah(totalTargetFunding)}</span>
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-slate-100 flex justify-between text-xs font-bold">
-                        <span className="text-slate-500">Unit On Target:</span>
-                        <span className="text-blue-600">{targetAchievedCount} / 17 Unit</span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                          Rata-Rata NPL Regional
-                        </span>
-                        <div className={`p-2 rounded-lg ${avgNPL <= 3 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
-                          <ShieldAlert className="w-4 h-4" />
-                        </div>
-                      </div>
-                      <div className={`text-2xl font-black mt-2 ${avgNPL <= 3 ? "text-emerald-600" : "text-rose-600"}`}>
-                        {avgNPL.toFixed(2)}%
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        Batas Toleransi: <span className="font-semibold text-slate-700">3.00%</span>
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-slate-100 flex justify-between text-xs font-bold">
-                        <span className="text-slate-500">Status Kualitas:</span>
-                        <span className={avgNPL <= 3 ? "text-emerald-600" : "text-rose-600"}>
-                          {avgNPL <= 3 ? "SEHAT" : "PERLU ATENSI"}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                          Total AO & Nasabah Area
-                        </span>
-                        <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
-                          <Users className="w-4 h-4" />
-                        </div>
-                      </div>
-                      <div className="text-2xl font-black text-slate-900 mt-2">
-                        {units.reduce((acc, u) => acc + u.aoCount, 0)} AO
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        Total Debitur: <span className="font-bold text-slate-800">{units.reduce((acc, u) => acc + u.totalCustomers, 0).toLocaleString()}</span>
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-slate-100 flex justify-between text-xs font-bold">
-                        <span className="text-slate-500">Total Kantor Branch:</span>
-                        <span className="text-slate-900">17 Unit</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <div className="flex items-center gap-2">
-                          <Award className="w-5 h-5 text-emerald-600" />
-                          <h3 className="font-bold text-slate-900 text-sm">Top 5 Unit Performansi Terbaik</h3>
-                        </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">
-                          Pencapaian Target Tinggi
-                        </span>
-                      </div>
-
-                      <div className="space-y-2 text-xs">
-                        {top5Units.map((item, idx) => (
-                          <div key={item.id} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
-                            <div className="flex items-center gap-3">
-                              <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-[10px]">
-                                {idx + 1}
-                              </span>
-                              <div>
-                                <span className="font-bold text-slate-900 block">{item.unit_name}</span>
-                                <span className="text-[10px] text-slate-400 font-mono">{item.unit_code}</span>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="font-black text-emerald-600 block">
-                                {getAchievement(item.realisasi_kredit, item.target_kredit).toFixed(1)}%
-                              </span>
-                              <span className="text-[10px] text-slate-500 font-mono">{formatRupiah(item.realisasi_kredit)}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <div className="flex items-center gap-2">
-                          <TrendingDown className="w-5 h-5 text-rose-600" />
-                          <h3 className="font-bold text-slate-900 text-sm">Bottom 5 Unit Perlu Pembinaan</h3>
-                        </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-50 text-rose-700">
-                          Di Bawah Target
-                        </span>
-                      </div>
-
-                      <div className="space-y-2 text-xs">
-                        {bottom5Units.map((item, idx) => (
-                          <div key={item.id} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50">
-                            <div className="flex items-center gap-3">
-                              <span className="w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center font-bold text-[10px]">
-                                {idx + 1}
-                              </span>
-                              <div>
-                                <span className="font-bold text-slate-900 block">{item.unit_name}</span>
-                                <span className="text-[10px] text-slate-400 font-mono">{item.unit_code}</span>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="font-black text-rose-600 block">
-                                {getAchievement(item.realisasi_kredit, item.target_kredit).toFixed(1)}%
-                              </span>
-                              <span className="text-[10px] text-slate-500 font-mono">{formatRupiah(item.realisasi_kredit)}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+          {activeMenu === "Input Worksheet Unit" && (
+            <div className="space-y-6">
+              <WorksheetGrid
+                initialMetrics={metrics}
+                units={units}
+                activeUnitScope={activeUnitScope}
+                isHeadArea={currentRole === "AREA_HEAD" || currentRole === "SUPER_ADMIN"}
+                onSaveWorksheet={handleSaveWorksheetBatch}
+              />
             </div>
           )}
 
@@ -1277,7 +1232,7 @@ export default function CommandCenter() {
                       placeholder="Cari nama / kode unit..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg outline-none focus:border-slate-800 w-48 md:w-64"
+                      className="pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg outline-none focus:border-slate-800 w-48 md:w-64 font-medium"
                     />
                   </div>
                 </div>
@@ -1447,7 +1402,7 @@ export default function CommandCenter() {
                         <span className="text-[10px] text-slate-400 font-mono">{bc.date}</span>
                       </div>
                       <p className="text-xs text-slate-700 leading-relaxed">{bc.content}</p>
-                      
+
                       {currentRole === "KEPALA_UNIT" && (
                         <div className="pt-2 flex justify-end">
                           {!isReadByCurrentUnit ? (
@@ -1468,193 +1423,6 @@ export default function CommandCenter() {
                   );
                 })}
               </div>
-            </div>
-          )}
-
-          {/* INPUT WORKSHEET UNIT (DARI EXCEL MATRIX) */}
-          {activeMenu === "Input Worksheet Unit" && (
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-w-4xl mx-auto space-y-6">
-              <div className="border-b border-slate-200 pb-4 flex items-center justify-between">
-                <div>
-                  <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 font-mono font-bold text-xs rounded border border-emerald-200">
-                    SCOPED BRANCH: {activeUnitScope}
-                  </span>
-                  <h3 className="font-extrabold text-slate-900 text-lg mt-2">
-                    Worksheet Laporan Pencapaian Target ({activeUnitInfo.name})
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Input data harian/bulanan unit langsung tersinkronisasi ke Dashboard Head Area secara live.
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Status Pencapaian:</span>
-                  <span className="text-lg font-black text-emerald-600">
-                    {getAchievement(worksheetRealisasiKredit, worksheetTargetKredit).toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-
-              <form onSubmit={handleSaveWorksheetUnit} className="space-y-6 text-xs">
-                
-                {/* SEKTOR KREDIT */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
-                  <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2 border-b border-slate-200 pb-2">
-                    <TrendingUp className="w-4 h-4 text-emerald-600" /> 1. Sektor Portofolio Kredit Mikro
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">Target Plafond / OS Kredit (Rp)</label>
-                      <input
-                        type="number"
-                        required
-                        value={worksheetTargetKredit}
-                        onChange={(e) => setWorksheetTargetKredit(Number(e.target.value))}
-                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono font-bold text-slate-900 focus:border-emerald-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">Realisasi Pencairan / OS Kredit (Rp)</label>
-                      <input
-                        type="number"
-                        required
-                        value={worksheetRealisasiKredit}
-                        onChange={(e) => setWorksheetRealisasiKredit(Number(e.target.value))}
-                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono font-bold text-emerald-700 focus:border-emerald-500"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* SEKTOR FUNDING / DPK */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
-                  <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2 border-b border-slate-200 pb-2">
-                    <Building2 className="w-4 h-4 text-blue-600" /> 2. Sektor Funding / DPK (Dana Pihak Ketiga)
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">Target Simpanan DPK (Rp)</label>
-                      <input
-                        type="number"
-                        required
-                        value={worksheetTargetFunding}
-                        onChange={(e) => setWorksheetTargetFunding(Number(e.target.value))}
-                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono font-bold text-slate-900 focus:border-emerald-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">Realisasi Simpanan DPK (Rp)</label>
-                      <input
-                        type="number"
-                        required
-                        value={worksheetRealisasiFunding}
-                        onChange={(e) => setWorksheetRealisasiFunding(Number(e.target.value))}
-                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono font-bold text-blue-700 focus:border-emerald-500"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* SEKTOR KUALITAS ASET & RISIKO */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
-                  <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2 border-b border-slate-200 pb-2">
-                    <ShieldAlert className="w-4 h-4 text-amber-600" /> 3. Kualitas Aset, Penagihan & Risiko
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">Collection Rate (%)</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        required
-                        value={worksheetCollectionRate}
-                        onChange={(e) => setWorksheetCollectionRate(Number(e.target.value))}
-                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono font-bold text-slate-900 focus:border-emerald-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">NPL % (Kol 3, 4, 5)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        required
-                        value={worksheetNPL}
-                        onChange={(e) => setWorksheetNPL(Number(e.target.value))}
-                        className={`w-full bg-white border rounded-lg p-2.5 outline-none font-mono font-bold focus:border-emerald-500 ${
-                          worksheetNPL <= 3 ? "text-emerald-700 border-slate-300" : "text-rose-600 border-rose-300"
-                        }`}
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">DKP / Kol 2 % (Potensi NPL)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        required
-                        value={worksheetDKP}
-                        onChange={(e) => setWorksheetDKP(Number(e.target.value))}
-                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono font-bold text-amber-700 focus:border-emerald-500"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* SDM & CATATAN OPERASIONAL */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
-                  <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2 border-b border-slate-200 pb-2">
-                    <FileText className="w-4 h-4 text-purple-600" /> 4. Operasional SDM & Ringkasan Laporan
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">Jumlah Account Officer (AO)</label>
-                      <input
-                        type="number"
-                        value={worksheetAOCount}
-                        onChange={(e) => setWorksheetAOCount(Number(e.target.value))}
-                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">Total Debitur Aktif</label>
-                      <input
-                        type="number"
-                        value={worksheetDebiturCount}
-                        onChange={(e) => setWorksheetDebiturCount(Number(e.target.value))}
-                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Ringkasan Operasional & Prospek Hari Ini</label>
-                    <textarea
-                      rows={3}
-                      placeholder="Tuliskan realisasi pencairan, penagihan, dan prospek nasabah..."
-                      value={worksheetReportSummary}
-                      onChange={(e) => setWorksheetReportSummary(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none"
-                    ></textarea>
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Hambatan / Kendala Lapangan</label>
-                    <textarea
-                      rows={2}
-                      placeholder="Tuliskan kendala teknis / jaminan..."
-                      value={worksheetObstacles}
-                      onChange={(e) => setWorksheetObstacles(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none"
-                    ></textarea>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3.5 rounded-xl shadow-lg shadow-emerald-950/20 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
-                >
-                  <Send className="w-4.5 h-4.5" /> Simpan & Sync Worksheet Ke Head Area
-                </button>
-
-              </form>
             </div>
           )}
 
@@ -1707,10 +1475,10 @@ export default function CommandCenter() {
               </form>
             </div>
           )}
-
         </main>
       </div>
 
+      {/* Detail Unit Modal */}
       {selectedUnitDetail && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5 border border-slate-200">
@@ -1753,6 +1521,7 @@ export default function CommandCenter() {
         </div>
       )}
 
+      {/* Broadcast Modal */}
       {isBroadcastModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200">
@@ -1794,6 +1563,7 @@ export default function CommandCenter() {
         </div>
       )}
 
+      {/* Metric Edit Modal */}
       {editingMetric && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200">
@@ -1838,7 +1608,6 @@ export default function CommandCenter() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
