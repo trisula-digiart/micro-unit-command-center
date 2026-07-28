@@ -48,7 +48,9 @@ import {
   Key,
   LogIn,
   Sparkles,
-  HelpCircle
+  HelpCircle,
+  Calculator,
+  Percent
 } from "lucide-react";
 
 const getSupabaseUrl = (): string => {
@@ -186,8 +188,10 @@ export interface PerformanceMetric {
   target_collection: number;
   realisasi_collection: number;
   npl_percentage: number;
+  dkp_percentage: number; // Special Mention / Kol 2
   profit: number;
   last_update: string;
+  submitted_today?: boolean;
 }
 
 export interface DailyReport {
@@ -271,8 +275,10 @@ const INITIAL_METRICS: PerformanceMetric[] = INITIAL_UNITS.map((unit, index) => 
     target_collection: targetCollection,
     realisasi_collection: realisasiCollection,
     npl_percentage: Number((1.2 + (index % 5) * 0.75).toFixed(2)),
+    dkp_percentage: Number((2.1 + (index % 4) * 0.6).toFixed(2)),
     profit: Number(((realisasiKredit * 0.08) - (targetKredit * 0.02)).toFixed(0)),
-    last_update: "Hari Ini, 08:30 WIB"
+    last_update: "Hari Ini, 08:30 WIB",
+    submitted_today: index % 3 !== 0
   };
 });
 
@@ -360,12 +366,41 @@ export default function CommandCenter() {
   const [newBroadcastTitle, setNewBroadcastTitle] = useState<string>("");
   const [newBroadcastContent, setNewBroadcastContent] = useState<string>("");
 
-  const [newReportType, setNewReportType] = useState<"HARIAN" | "MINGGUAN" | "BULANAN">("HARIAN");
-  const [newReportSummary, setNewReportSummary] = useState<string>("");
-  const [newReportObstacles, setNewReportObstacles] = useState<string>("");
+  // Worksheet Form States for Branch Units
+  const [worksheetTargetKredit, setWorksheetTargetKredit] = useState<number>(1500000000);
+  const [worksheetRealisasiKredit, setWorksheetRealisasiKredit] = useState<number>(1620000000);
+  const [worksheetTargetFunding, setWorksheetTargetFunding] = useState<number>(1000000000);
+  const [worksheetRealisasiFunding, setWorksheetRealisasiFunding] = useState<number>(1050000000);
+  const [worksheetCollectionRate, setWorksheetCollectionRate] = useState<number>(92.5);
+  const [worksheetNPL, setWorksheetNPL] = useState<number>(1.85);
+  const [worksheetDKP, setWorksheetDKP] = useState<number>(2.40);
+  const [worksheetAOCount, setWorksheetAOCount] = useState<number>(4);
+  const [worksheetDebiturCount, setWorksheetDebiturCount] = useState<number>(520);
+  const [worksheetReportSummary, setWorksheetReportSummary] = useState<string>("");
+  const [worksheetObstacles, setWorksheetObstacles] = useState<string>("");
 
   const [areaHeadNoteInput, setAreaHeadNoteInput] = useState<string>("");
   const [editingMetric, setEditingMetric] = useState<PerformanceMetric | null>(null);
+
+  // Sync state form worksheet saat scope unit berganti
+  useEffect(() => {
+    const currentScopedMetric = metrics.find((m) => m.unit_code === activeUnitScope);
+    const currentScopedUnit = units.find((u) => u.code === activeUnitScope);
+
+    if (currentScopedMetric) {
+      setWorksheetTargetKredit(currentScopedMetric.target_kredit);
+      setWorksheetRealisasiKredit(currentScopedMetric.realisasi_kredit);
+      setWorksheetTargetFunding(currentScopedMetric.target_funding);
+      setWorksheetRealisasiFunding(currentScopedMetric.realisasi_funding);
+      setWorksheetCollectionRate(currentScopedMetric.realisasi_collection);
+      setWorksheetNPL(currentScopedMetric.npl_percentage);
+      setWorksheetDKP(currentScopedMetric.dkp_percentage || 2.1);
+    }
+    if (currentScopedUnit) {
+      setWorksheetAOCount(currentScopedUnit.aoCount);
+      setWorksheetDebiturCount(currentScopedUnit.totalCustomers);
+    }
+  }, [activeUnitScope, metrics, units]);
 
   const fetchLiveData = async () => {
     if (!supabase) {
@@ -396,8 +431,10 @@ export default function CommandCenter() {
             target_collection: 95,
             realisasi_collection: 90,
             npl_percentage: Number(m.npl_percentage),
+            dkp_percentage: Number(m.dkp_percentage || 2.1),
             profit: 150000000,
-            last_update: "Hari Ini"
+            last_update: "Hari Ini",
+            submitted_today: true
           };
         });
         setMetrics(formattedMetrics);
@@ -489,8 +526,7 @@ export default function CommandCenter() {
     } else {
       return [
         { name: "Dashboard Unit", icon: LayoutDashboard },
-        { name: "Data Unit", icon: Building },
-        { name: "Input Laporan", icon: Send },
+        { name: "Input Worksheet Unit", icon: Send },
         { name: "Monitoring Target", icon: Target },
         { name: "Pesan dari Head", icon: Mail, badge: broadcasts.filter(b => !b.readBy.includes(activeUnitScope)).length },
         { name: "Notifikasi Unit", icon: Bell },
@@ -560,40 +596,67 @@ export default function CommandCenter() {
     }));
   };
 
-  const handleSaveUnitReport = async (e: React.FormEvent) => {
+  // Submit Laporan Worksheet Unit (Satu Klik Langsung Sync Ke Supabase)
+  const handleSaveWorksheetUnit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newReportSummary.trim()) return;
-
     const currentUnitData = units.find(u => u.code === activeUnitScope);
-    const newRep: DailyReport = {
-      id: `rep-${Date.now()}`,
-      unit_id: currentUnitData?.id || units[0].id,
-      unit_name: currentUnitData?.name || "Kantor Mikro",
-      unit_code: activeUnitScope,
-      report_type: newReportType,
-      report_date: new Date().toISOString().split("T")[0],
-      operational_summary: newReportSummary,
-      obstacles: newReportObstacles || "Tidak ada kendala utama.",
-      status: "PENDING",
-      area_head_notes: ""
-    };
+    if (!currentUnitData) return;
 
-    setReports([newRep, ...reports]);
+    // 1. Update State Metrics Lokal
+    setMetrics(prev => prev.map(m => {
+      if (m.unit_code === activeUnitScope) {
+        return {
+          ...m,
+          target_kredit: worksheetTargetKredit,
+          realisasi_kredit: worksheetRealisasiKredit,
+          target_funding: worksheetTargetFunding,
+          realisasi_funding: worksheetRealisasiFunding,
+          realisasi_collection: worksheetCollectionRate,
+          npl_percentage: worksheetNPL,
+          dkp_percentage: worksheetDKP,
+          last_update: "Baru Saja",
+          submitted_today: true
+        };
+      }
+      return m;
+    }));
 
+    // 2. Buat Catatan Laporan Harian
+    if (worksheetReportSummary.trim()) {
+      const newRep: DailyReport = {
+        id: `rep-${Date.now()}`,
+        unit_id: currentUnitData.id,
+        unit_name: currentUnitData.name,
+        unit_code: activeUnitScope,
+        report_type: "HARIAN",
+        report_date: new Date().toISOString().split("T")[0],
+        operational_summary: worksheetReportSummary,
+        obstacles: worksheetObstacles || "Tidak ada kendala.",
+        status: "PENDING",
+        area_head_notes: ""
+      };
+      setReports([newRep, ...reports]);
+    }
+
+    // 3. Mutasi Ke Supabase Database jika terhubung
     if (supabase && isConnectedLive) {
-      await supabase.from("daily_reports").insert([{
-        unit_id: currentUnitData?.id || units[0].id,
-        report_date: newRep.report_date,
-        report_type: newRep.report_type,
-        operational_summary: newRep.operational_summary,
-        obstacles: newRep.obstacles,
-        status: "PENDING"
-      }]);
+      const targetMetric = metrics.find(m => m.unit_code === activeUnitScope);
+      if (targetMetric) {
+        await supabase.from("performance_metrics").update(targetMetric.id, {
+          target_kredit: worksheetTargetKredit,
+          realisasi_kredit: worksheetRealisasiKredit,
+          target_funding: worksheetTargetFunding,
+          realisasi_funding: worksheetRealisasiFunding,
+          npl_percentage: worksheetNPL,
+          updated_at: new Date().toISOString()
+        });
+      }
       fetchLiveData();
     }
 
-    setNewReportSummary("");
-    setNewReportObstacles("");
+    alert(`✓ Data Worksheet ${activeUnitScope} Berhasil Disimpan & Tersambung Ke Head Area!`);
+    setWorksheetReportSummary("");
+    setWorksheetObstacles("");
   };
 
   const handleApproveReport = async (id: string, status: "APPROVED" | "REVISION") => {
@@ -998,6 +1061,40 @@ export default function CommandCenter() {
                 </div>
               ) : (
                 <div className="space-y-6">
+
+                  {/* WIDGET LIVE TRACKER INPUT 17 UNIT UNTUK HEAD AREA */}
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div>
+                        <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Status Pengiriman Worksheet 17 Unit Hari Ini
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          {metrics.filter(m => m.submitted_today).length} dari 17 Unit Telah Mengirimkan Pembaruan Data
+                        </p>
+                      </div>
+                      <span className="px-3 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-lg text-xs">
+                        {((metrics.filter(m => m.submitted_today).length / 17) * 100).toFixed(0)}% Laporan Masuk
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-2 text-xs">
+                      {metrics.map((m) => (
+                        <div
+                          key={m.id}
+                          className={`p-2 rounded-lg border text-center font-mono font-bold transition-all ${
+                            m.submitted_today
+                              ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+                              : "bg-slate-50 border-slate-200 text-slate-400"
+                          }`}
+                        >
+                          <span className="block text-[10px] uppercase font-sans text-slate-500">{m.unit_code}</span>
+                          <span className="text-[11px]">{m.submitted_today ? "✓ UPDATED" : "PENDING"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden">
                       <div className="flex items-center justify-between">
@@ -1374,56 +1471,189 @@ export default function CommandCenter() {
             </div>
           )}
 
-          {activeMenu === "Input Laporan" && (
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-2xl mx-auto space-y-5">
-              <div className="border-b border-slate-100 pb-3">
-                <h3 className="font-bold text-slate-900 text-base">Form Pengiriman Laporan Unit</h3>
-                <p className="text-xs text-slate-500">Kirim laporan harian, mingguan, atau bulanan langsung ke Head Area</p>
+          {/* INPUT WORKSHEET UNIT (DARI EXCEL MATRIX) */}
+          {activeMenu === "Input Worksheet Unit" && (
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-w-4xl mx-auto space-y-6">
+              <div className="border-b border-slate-200 pb-4 flex items-center justify-between">
+                <div>
+                  <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 font-mono font-bold text-xs rounded border border-emerald-200">
+                    SCOPED BRANCH: {activeUnitScope}
+                  </span>
+                  <h3 className="font-extrabold text-slate-900 text-lg mt-2">
+                    Worksheet Laporan Pencapaian Target ({activeUnitInfo.name})
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Input data harian/bulanan unit langsung tersinkronisasi ke Dashboard Head Area secara live.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Status Pencapaian:</span>
+                  <span className="text-lg font-black text-emerald-600">
+                    {getAchievement(worksheetRealisasiKredit, worksheetTargetKredit).toFixed(1)}%
+                  </span>
+                </div>
               </div>
 
-              <form onSubmit={handleSaveUnitReport} className="space-y-4 text-xs">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Jenis Laporan</label>
-                  <select
-                    value={newReportType}
-                    onChange={(e) => setNewReportType(e.target.value as any)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 outline-none font-medium"
-                  >
-                    <option value="HARIAN">Laporan Harian Operasional</option>
-                    <option value="MINGGUAN">Laporan Rekap Mingguan</option>
-                    <option value="BULANAN">Laporan Bulanan Pencapaian</option>
-                  </select>
+              <form onSubmit={handleSaveWorksheetUnit} className="space-y-6 text-xs">
+                
+                {/* SEKTOR KREDIT */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                  <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2 border-b border-slate-200 pb-2">
+                    <TrendingUp className="w-4 h-4 text-emerald-600" /> 1. Sektor Portofolio Kredit Mikro
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Target Plafond / OS Kredit (Rp)</label>
+                      <input
+                        type="number"
+                        required
+                        value={worksheetTargetKredit}
+                        onChange={(e) => setWorksheetTargetKredit(Number(e.target.value))}
+                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono font-bold text-slate-900 focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Realisasi Pencairan / OS Kredit (Rp)</label>
+                      <input
+                        type="number"
+                        required
+                        value={worksheetRealisasiKredit}
+                        onChange={(e) => setWorksheetRealisasiKredit(Number(e.target.value))}
+                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono font-bold text-emerald-700 focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Ringkasan Pencapaian & Prospek</label>
-                  <textarea
-                    rows={4}
-                    required
-                    placeholder="Tuliskan realisasi pencairan, penagihan, dan prospek nasabah..."
-                    value={newReportSummary}
-                    onChange={(e) => setNewReportSummary(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 outline-none font-medium"
-                  ></textarea>
+                {/* SEKTOR FUNDING / DPK */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                  <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2 border-b border-slate-200 pb-2">
+                    <Building2 className="w-4 h-4 text-blue-600" /> 2. Sektor Funding / DPK (Dana Pihak Ketiga)
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Target Simpanan DPK (Rp)</label>
+                      <input
+                        type="number"
+                        required
+                        value={worksheetTargetFunding}
+                        onChange={(e) => setWorksheetTargetFunding(Number(e.target.value))}
+                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono font-bold text-slate-900 focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Realisasi Simpanan DPK (Rp)</label>
+                      <input
+                        type="number"
+                        required
+                        value={worksheetRealisasiFunding}
+                        onChange={(e) => setWorksheetRealisasiFunding(Number(e.target.value))}
+                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono font-bold text-blue-700 focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Hambatan & Kendala Lapangan</label>
-                  <textarea
-                    rows={2}
-                    placeholder="Tuliskan kendala teknis / jaminan..."
-                    value={newReportObstacles}
-                    onChange={(e) => setNewReportObstacles(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 outline-none font-medium"
-                  ></textarea>
+                {/* SEKTOR KUALITAS ASET & RISIKO */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                  <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2 border-b border-slate-200 pb-2">
+                    <ShieldAlert className="w-4 h-4 text-amber-600" /> 3. Kualitas Aset, Penagihan & Risiko
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Collection Rate (%)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        required
+                        value={worksheetCollectionRate}
+                        onChange={(e) => setWorksheetCollectionRate(Number(e.target.value))}
+                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono font-bold text-slate-900 focus:border-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">NPL % (Kol 3, 4, 5)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={worksheetNPL}
+                        onChange={(e) => setWorksheetNPL(Number(e.target.value))}
+                        className={`w-full bg-white border rounded-lg p-2.5 outline-none font-mono font-bold focus:border-emerald-500 ${
+                          worksheetNPL <= 3 ? "text-emerald-700 border-slate-300" : "text-rose-600 border-rose-300"
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">DKP / Kol 2 % (Potensi NPL)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={worksheetDKP}
+                        onChange={(e) => setWorksheetDKP(Number(e.target.value))}
+                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono font-bold text-amber-700 focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* SDM & CATATAN OPERASIONAL */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                  <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2 border-b border-slate-200 pb-2">
+                    <FileText className="w-4 h-4 text-purple-600" /> 4. Operasional SDM & Ringkasan Laporan
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Jumlah Account Officer (AO)</label>
+                      <input
+                        type="number"
+                        value={worksheetAOCount}
+                        onChange={(e) => setWorksheetAOCount(Number(e.target.value))}
+                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Total Debitur Aktif</label>
+                      <input
+                        type="number"
+                        value={worksheetDebiturCount}
+                        onChange={(e) => setWorksheetDebiturCount(Number(e.target.value))}
+                        className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Ringkasan Operasional & Prospek Hari Ini</label>
+                    <textarea
+                      rows={3}
+                      placeholder="Tuliskan realisasi pencairan, penagihan, dan prospek nasabah..."
+                      value={worksheetReportSummary}
+                      onChange={(e) => setWorksheetReportSummary(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none"
+                    ></textarea>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Hambatan / Kendala Lapangan</label>
+                    <textarea
+                      rows={2}
+                      placeholder="Tuliskan kendala teknis / jaminan..."
+                      value={worksheetObstacles}
+                      onChange={(e) => setWorksheetObstacles(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-lg p-2.5 outline-none"
+                    ></textarea>
+                  </div>
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full bg-[#0F172A] hover:bg-slate-800 text-white font-bold py-3 rounded-lg shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3.5 rounded-xl shadow-lg shadow-emerald-950/20 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
                 >
-                  <Send className="w-4 h-4" /> Kirim Laporan Resmi
+                  <Send className="w-4.5 h-4.5" /> Simpan & Sync Worksheet Ke Head Area
                 </button>
+
               </form>
             </div>
           )}
